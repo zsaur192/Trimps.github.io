@@ -32,6 +32,7 @@ var playerSpire = {
     dontDraw: false,
     paused: false,
     tooltipUpdate: null,
+    sealed: false,
     settings: {
         fctTrap: true,
         fctPoison: true,
@@ -434,6 +435,25 @@ var playerSpire = {
         text += " / " + prettify(nextCost) + "</span>"
         return text;
     },
+    canSeal: function(){
+        return (playerSpireTraps.Strength.owned >= 10 && playerSpireTraps.Knowledge.owned >= 10 && playerSpireTraps.Condenser.owned >= 10);
+    },
+    seal: function(){
+        this.sealed = true;
+        this.clearEnemies();
+        playerSpireTraps.Knowledge.owned = 11;
+        playerSpireTraps.Strength.owned = 11;
+        playerSpireTraps.Condenser.owned = 11;
+        document.getElementById('playerSpireTab').style.display = 'none';
+    },
+    unseal: function(){
+        playerSpireTraps.Knowledge.owned = 10;
+        playerSpireTraps.Strength.owned = 10;
+        playerSpireTraps.Condenser.owned = 10;
+        this.sealed = false;
+        document.getElementById('playerSpireTab').style.display = 'table-cell';
+        this.drawInfo();
+    },
     togglePause: function(){
         this.paused = !this.paused;
         this.drawInfo();
@@ -469,6 +489,10 @@ var playerSpire = {
     },
     drawInfo: function(){
         if (!this.popupOpen) return;
+        if (this.sealed){
+            document.getElementById('playerSpireInfoPanel').innerHTML = "<div style='text-align: center; font-weight: bold'>The Spire is Sealed, but you are still earning bonuses from having 11 of each Tower.<br/><br/>You can unseal the Spire if you want to, but will lose your 11th towers.<br/><br/><div onclick='playerSpire.unseal()' id='unsealSpireBtn' class='spireControlBox'>Unseal Spire</div></div><span id='playerSpireCloseBtn' class='icomoon icon-close' onclick='playerSpire.closePopup()'></span>"
+            return;
+        }
         if (this.smallMode){
             this.drawSmallInfo();
             return;
@@ -505,7 +529,12 @@ var playerSpire = {
             if (this.settings.trapIcons) trapIcon = "<span class='icomoon icon-" + trap.icon + "'></span> ";
             var cost = this.getTrapCost(item);
             var color = (this.runestones >= cost) ? trap.color : "grey";
-            infoHtml += "<div style='background-color: " + color + "' onmouseout='tooltip(\"hide\")' onmouseover='playerSpire.trapTooltip(\"" + item + "\", event)' onclick='playerSpire.selectTrap(\"" + item + "\")' id='" + item + "TrapBox' class='spireTrapBox" + ((item == this.selectedTrap) ? " selected" : "") + "'>" + trapIcon + item + " " + trapText + "<br/>" + prettify(this.getTrapCost(item)) + " Rs</div>"
+            var costText = prettify(this.getTrapCost(item)) + " Rs";
+            if (trap.isTower && trap.owned >= 10) {
+                costText = "Max Level"
+                color = "grey";
+            }
+            infoHtml += "<div style='background-color: " + color + "' onmouseout='tooltip(\"hide\")' onmouseover='playerSpire.trapTooltip(\"" + item + "\", event)' onclick='playerSpire.selectTrap(\"" + item + "\")' id='" + item + "TrapBox' class='spireTrapBox" + ((item == this.selectedTrap) ? " selected" : "") + "'>" + trapIcon + item + " " + trapText + "<br/>" + costText + "</div>"
             if (this.runestones < cost && (cheapestTrap == -1 || cost < cheapestTrap)) cheapestTrap = cost;
         }
         this.nextTrap = cheapestTrap;
@@ -513,6 +542,9 @@ var playerSpire = {
         infoHtml += "<span id='playerSpireCloseBtn' class='icomoon icon-close' onclick='playerSpire.closePopup()'></span>";
         infoHtml += "<div id='playerSpireUpgradesArea'>";
         infoHtml += this.getUpgradesHtml();
+        if (this.canSeal()){
+            infoHtml += "<div id='spireSealInfo' style='font-weight: bold; text-align: center;'>You now have 10 of each Tower and have successfully reinforced every floor of this Spire. Your Trimps would be incredibly proud of you if they could process such strong emotions, for this was no small feat! Your Scientists can now construct one more of each Tower for free, but doing so will seal the Spire. If you choose to Seal the Spire, you'll earn World bonuses as if you had 11 of each Tower, but enemies will no longer spawn in the Spire.<br/>NOTE: Sealing the Spire will remove the tab used to access this window, but a Setting will be added under Other should you want to unseal it for any reason.<br/><div onclick='playerSpire.seal()' id='sealSpireBtn' class='spireControlBox'>Seal Spire</div></div>"
+        }
         infoHtml += "</div>"; //playerSpireUpgradesArea
         elem.innerHTML = infoHtml;
     },
@@ -533,6 +565,7 @@ var playerSpire = {
             if (playerSpireTraps[item].locked) continue;
             var cost = this.getTrapCost(item);
             var color = (this.runestones >= cost) ? playerSpireTraps[item].color : "grey";
+            if (trap.isTower && trap.owned >= 10) color = "grey";
             var trapIcon = "";
             if (this.settings.trapIcons) trapIcon = "<span class='icomoon icon-" + playerSpireTraps[item].icon + "'></span> ";
             html += "<div style='background-color: " + color + "' onmouseout='tooltip(\"hide\")' onmouseover='playerSpire.trapTooltip(\"" + item + "\", event)' onclick='playerSpire.selectTrap(\"" + item + "\")' id='" + item + "TrapBox' class='spireTrapBoxSmall" + ((item == this.selectedTrap) ? " selected" : "") + "'>" + trapIcon + item + "</div>";
@@ -1124,6 +1157,7 @@ var playerSpire = {
         if (!trap) return;
         var oldTrap = this.layout[cell].trap.name;
         if (trap == oldTrap) return;
+        if (playerSpireTraps[trap].isTower && playerSpireTraps[trap].owned >= 10) return;
         var cost = this.getTrapCost(trap);
         var refund = 0;
         if (oldTrap) refund = this.getTrapCost(oldTrap, true);
@@ -1266,6 +1300,7 @@ var playerSpire = {
         return cell % 5;  
     },
     moveEnemies: function(catchingUp){
+        if (this.sealed) return;
         if (this.paused) return;
         var layout = playerSpire.layout;
         var totalEnemies = 0;
@@ -1383,6 +1418,7 @@ var playerSpire = {
         saveObject.main.difficultyHidden = this.difficultyHidden;
         saveObject.main.peakThreat = this.peakThreat;
         saveObject.main.paused = this.paused;
+        saveObject.main.sealed = this.sealed;
         saveObject.settings = this.settings;
 
         for (var item in playerSpireTraps){
@@ -1412,6 +1448,7 @@ var playerSpire = {
             playerSpireTraps[item].level = saveObj.traps[item].level;
             playerSpireTraps[item].locked = saveObj.traps[item].locked;
         }
+        if (this.smallMode && ((this.canSeal() && !this.sealed) || this.sealed)) this.smallMode = false;
         if (this.popupOpen)
             this.openPopup();
         else this.closePopup();
@@ -1422,7 +1459,8 @@ var playerSpire = {
         this.drawSpire();
         this.drawInfo();
         this.initalized = true;
-        document.getElementById('playerSpireTab').style.display = 'table-cell';
+        if (!this.sealed) document.getElementById('playerSpireTab').style.display = 'table-cell';
+        else document.getElementById('playerSpireTab').style.display = 'none';
         this.updateTabColor();
     }
 
