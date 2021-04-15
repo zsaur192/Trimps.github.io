@@ -43,6 +43,7 @@ var isSaving = false;
 var disableSaving = false;
 function save(exportThis, fromManual) {
 	isSaving = true;
+	autoBattle.save();
     var saveString = JSON.stringify(game);
     var saveGame = JSON.parse(saveString);
 	isSaving = false;
@@ -336,6 +337,12 @@ function load(saveString, autoLoad, fromPf) {
         if (a == "badGuys") continue;
         if (a == "worldUnlocks") continue;
         if (a == "mapConfig") continue;
+		// if (a == "herbs"){ //or any other two step object
+		// 	if (typeof savegame[a] === 'undefined') continue;
+		// 	for (var b in game[a]){
+		// 		if (typeof savegame[a][b] !== 'undefined') game[a][b] = savegame[a][b];
+		// 	}
+		// }
 		if (a == "options" && savegame.options){
 			for (var itemO in savegame.options.menu){
 				if (game.options.menu[itemO]) game.options.menu[itemO].enabled = savegame.options.menu[itemO].enabled;
@@ -395,6 +402,7 @@ function load(saveString, autoLoad, fromPf) {
         }
     }
 	game.global.lockTooltip = false;
+	autoBattle.resetAll();
 	playerSpire.resetToDefault();
 	if (savegame.playerSpire) playerSpire.load(savegame.playerSpire)
 	//Compatibility
@@ -955,6 +963,11 @@ function load(saveString, autoLoad, fromPf) {
 	}
 	//End compatibility
 	//Test server only
+	if (betaV < 1) game.global.pandCompletions = 0;
+	if (betaV < 2 && game.global.pandCompletions > 3) game.global.pandCompletions = 3;
+	if (betaV < 3){
+		game.global.alchemyUnlocked = false;
+	}
 	//End test server only
 	//Temporary until next patch
 	if (compareVersion([5,4,2], oldStringVersion)){
@@ -1140,6 +1153,8 @@ function load(saveString, autoLoad, fromPf) {
 	countChallengeSquaredReward();
 	manageEqualityStacks();
 	setTrimpColSize();
+	alchObj.load();
+	autoBattle.load();
 	if (game.global.totalVoidMaps > 0 && !game.global.mapsActive) addVoidAlert();
 	if (!game.options.menu.pauseGame.enabled) {
 		//If not paused and offline progress is enabled, run offline progress
@@ -1616,6 +1631,7 @@ function displayChallenges() {
 		else if (what == "Slow") done = game.global.slowDone;
 		else if (what == "Storm") done = game.global.stormDone;
 		else if (what == "Mayhem") done = game.global.mayhemCompletions >= game.challenges.Mayhem.maxRuns;
+		else if (what == "Pandemonium") done = game.global.pandCompletions >= game.challenges.Pandemonium.maxRuns;
 		else if (what == "Exterminate") done = game.global.exterminateDone;
 		done = (done) ? "finishedChallenge" : "";
 		if (challenge.heliumThrough) done = "challengeRepeatable";
@@ -2588,8 +2604,16 @@ function trustworthyTrimps(noTip, forceTime){
 		var amt = job.owned * job.modifier;
 		amt += (amt * getPerkLevel("Motivation") * game.portal.Motivation.modifier);
 		if (getPerkLevel("Motivation_II") > 0) amt *= (1 + (getPerkLevel("Motivation_II") * game.portal.Motivation_II.modifier));
+		if (job != "Explorer"){
+			if (game.global.challengeActive == "Alchemy") amt *= alchObj.getPotionEffect("Potion of Finding");
+			else amt *= alchObj.getPotionEffect("Elixir of Finding");
+		}
+		if (game.global.pandCompletions && job != "Explorer" && game.global.universe == 2) amt *= game.challenges.Pandemonium.getTrimpMult();
 		if (getPerkLevel("Observation") > 0 && game.portal.Observation.trinkets > 0) amt *= game.portal.Observation.getMult();
-		if (resName == "food" || resName == "wood" || resName == "metal") amt *= getParityBonus();
+		if (resName == "food" || resName == "wood" || resName == "metal"){
+			amt *= getParityBonus();
+			if (autoBattle.oneTimers.Gathermate.owned) amt *= autoBattle.oneTimers.Gathermate.getMult();
+		}
 		if (Fluffy.isRewardActive('gatherer')) amt *= 2;
 		if (getPerkLevel("Meditation") > 0 || (game.jobs.Magmamancer.owned > 0 && resName == "metal")) {
 			var medLevel = getPerkLevel("Meditation");
@@ -3579,6 +3603,11 @@ function rewardResource(what, baseAmt, level, checkMapLootScale, givePercentage)
 	
 	if (getPerkLevel("Looting")) amt += (amt * getPerkLevel("Looting") * game.portal.Looting.modifier);
 	if (getPerkLevel("Looting_II")) amt *= (1 + (getPerkLevel("Looting_II") * game.portal.Looting_II.modifier));
+	if (what == "helium") amt *= alchObj.getRadonMult();
+	if (what != "fragments" && what != "helium"){
+		if (game.global.challengeActive == "Alchemy") amt *= alchObj.getPotionEffect("Potion of Finding");
+		else amt *= alchObj.getPotionEffect("Elixir of Finding");
+	}
 	if (getPerkLevel("Greed")) amt *= game.portal.Greed.getMult();
 	if (game.global.challengeActive == "Quagmire") amt *= game.challenges.Quagmire.getLootMult();
 	if (Fluffy.isRewardActive("wealthy") && what != "helium") amt *= 2;
@@ -3587,6 +3616,8 @@ function rewardResource(what, baseAmt, level, checkMapLootScale, givePercentage)
 	if (game.global.totalSquaredReward > 0 && what == "helium") amt *= ((game.global.totalSquaredReward / 1000) + 1);
 	if (game.unlocks.impCount.Magnimp && what != "helium") amt *= Math.pow(1.003, game.unlocks.impCount.Magnimp);
 	if (game.global.mayhemCompletions > 0 && game.global.universe == 2 && what == "helium") amt *= game.challenges.Mayhem.getTrimpMult();
+	if (autoBattle.bonuses.Radon.level > 0 && game.global.universe == 2 && what == "helium") amt *= autoBattle.bonuses.Radon.getMult();
+	if (game.global.pandCompletions > 0 && game.global.universe == 2 && what == "helium") amt *= game.challenges.Pandemonium.getTrimpMult();
 	if (game.global.challengeActive == "Archaeology" && what != "helium" && what != "fragments"){
 		amt *= game.challenges.Archaeology.getStatMult("science");
 	}
@@ -3846,8 +3877,16 @@ function gather() {
 			perSec = (game.jobs[job].owned * game.jobs[job].modifier);
 			if (getPerkLevel("Motivation") > 0) perSec += (perSec * getPerkLevel("Motivation") * game.portal.Motivation.modifier);
 			if (getPerkLevel("Motivation_II") > 0) perSec *= (1 + (getPerkLevel("Motivation_II") * game.portal.Motivation_II.modifier));
+			if (increase != "fragments" && increase != "science"){
+				if (game.global.challengeActive == "Alchemy") perSec *= alchObj.getPotionEffect("Potion of Finding");
+				else perSec *= alchObj.getPotionEffect("Elixir of Finding");
+			}
+			if (game.global.pandCompletions && game.global.universe == 2 && increase != "fragments") perSec *= game.challenges.Pandemonium.getTrimpMult();
 			if (getPerkLevel("Observation") > 0 && game.portal.Observation.trinkets > 0) perSec *= game.portal.Observation.getMult();
-			if (increase == 'food' || increase == 'metal' || increase == 'wood') perSec *= getParityBonus();
+			if (increase == 'food' || increase == 'metal' || increase == 'wood'){
+				perSec *= getParityBonus();
+				if (autoBattle.oneTimers.Gathermate.owned) perSec *= autoBattle.oneTimers.Gathermate.getMult();
+			}
 			if (getPerkLevel("Meditation") > 0) perSec *= (1 + (game.portal.Meditation.getBonusPercent() * 0.01));
 			if ((increase == "food" && game.buildings.Antenna.owned >= 5) || (increase == "metal" && game.buildings.Antenna.owned >= 15)) perSec *= game.jobs.Meteorologist.getExtraMult();
 			if (Fluffy.isRewardActive("gatherer")) perSec *= 2;
@@ -3989,11 +4028,19 @@ function canAffordTwoLevel(whatObj, takeEm) {
 			if (game.global.challengeActive == "Daily" && typeof game.global.dailyChallenge.metallicThumb !== 'undefined'){
 				artMult *= dailyModifiers.metallicThumb.getMult(game.global.dailyChallenge.metallicThumb.strength);
 			}
+			if (autoBattle.oneTimers.Artisan.owned && game.global.universe == 2){
+				var mod = autoBattle.oneTimers.Artisan.getMult();
+				artMult = (artMult == -1) ? mod : artMult * mod;
+			}
 			if (game.global.challengeActive == "Obliterated"){
 				artMult = (artMult == -1) ? 1e12 : (1e12 * artMult);
 			}
 			if (game.global.challengeActive == "Eradicated"){
 				var mod = game.challenges.Eradicated.scaleModifier
+				artMult = (artMult == -1) ? mod : (mod * artMult);
+			}
+			if (game.global.challengeActive == "Pandemonium"){
+				var mod = game.challenges.Pandemonium.getEnemyMult();
 				artMult = (artMult == -1) ? mod : (mod * artMult);
 			}
 			if (whatObj.prestiges && (res == "metal" || res == "wood")) cost *= artMult;
@@ -4045,11 +4092,19 @@ function canAffordBuilding(what, take, buildCostString, isEquipment, updatingLab
 			if (game.global.challengeActive == "Daily" && typeof game.global.dailyChallenge.metallicThumb !== 'undefined'){
 				artMult *= dailyModifiers.metallicThumb.getMult(game.global.dailyChallenge.metallicThumb.strength);
 			}
+			if (autoBattle.oneTimers.Artisan.owned && game.global.universe == 2){
+				var mod = autoBattle.oneTimers.Artisan.getMult();
+				artMult = (artMult == -1) ? mod : artMult * mod;
+			}
 			if (game.global.challengeActive == "Obliterated"){
 				artMult = (artMult == -1) ? 1e12 : (1e12 * artMult);
 			}
 			if (game.global.challengeActive == "Eradicated"){
 				var mod = game.challenges.Eradicated.scaleModifier
+				artMult = (artMult == -1) ? mod : (mod * artMult);
+			}
+			if (game.global.challengeActive == "Pandemonium"){
+				var mod = game.challenges.Pandemonium.getEnemyMult();
 				artMult = (artMult == -1) ? mod : (mod * artMult);
 			}
 			price = Math.ceil(price * artMult);
@@ -4248,6 +4303,7 @@ function buildBuilding(what) {
 	if (!game.buildings.Hub.locked){
 		var hubbable = ["Hut", "House", "Mansion", "Hotel", "Resort", "Gateway", "Collector"];
 		if (hubbable.indexOf(what) != -1) buildBuilding("Hub");
+		if (what == "Collector" && autoBattle.oneTimers.Collectology.owned) buildBuilding("Hub");
 	}
 }
 
@@ -4374,6 +4430,15 @@ function buyAutoJobs(allowRatios){
 		autoBuyJob(item, true, Math.floor(toBuy), useMax);
 	}
 	calculateParityBonus();
+}
+
+function autoBalanceJob(which){
+	//Fired when miners and scientists are unlocked and maybe other places later, requires autoJobs
+	var setting = getAutoJobsSetting();
+	if (!setting.enabled || !bwRewardUnlocked("AutoJobs")) return;
+	if (!setting[which].enabled || !setting.Farmer.enabled) return;
+	var want = game.jobs.Farmer.owned * (setting[which].ratio / setting.Farmer.ratio);
+	if (game.workspaces > want) autoBuyJob(which, true, want);
 }
 
 function autoBuyJob(what, isRatio, purchaseAmt, max){
@@ -4585,11 +4650,19 @@ function calculateMaxAfford(itemObj, isBuilding, isEquipment, isJob, forceMax, f
 				if (game.global.challengeActive == "Daily" && typeof game.global.dailyChallenge.metallicThumb !== 'undefined'){
 					artMult *= dailyModifiers.metallicThumb.getMult(game.global.dailyChallenge.metallicThumb.strength);
 				}
+				if (autoBattle.oneTimers.Artisan.owned && game.global.universe == 2){
+					var mod = autoBattle.oneTimers.Artisan.getMult();
+					artMult = (artMult == -1) ? mod : artMult * mod;
+				}
 				if (game.global.challengeActive == "Obliterated"){
 					artMult = (artMult == -1) ? 1e12 : (1e12 * artMult);
 				}
 				if (game.global.challengeActive == "Eradicated"){
 					var mod = game.challenges.Eradicated.scaleModifier
+					artMult = (artMult == -1) ? mod : (mod * artMult);
+				}
+				if (game.global.challengeActive == "Pandemonium"){
+					var mod = game.challenges.Pandemonium.getEnemyMult();
 					artMult = (artMult == -1) ? mod : (mod * artMult);
 				}
 				start = Math.ceil(start * artMult);
@@ -5135,6 +5208,9 @@ function createMap(newLevel, nameOverride, locationOverride, lootOverride, sizeO
 	if (newMap.location == 'Plentiful' && game.global.decayDone){
 		newMap.loot += .25;
 	}
+	if (game.global.farmlandsUnlocked && newMap.location == 'Farmlands'){
+		newMap.loot += 1;
+	}
 	var specialModifier = getSpecialModifierSetting();
 	if (!nameOverride && specialModifier != "0"){
 		newMap.bonus = specialModifier;
@@ -5222,6 +5298,8 @@ function resetAdvMaps(fromClick) {
 	var biomeElem = document.getElementById("biomeAdvMapsSelect");
 	if (game.global.decayDone && document.getElementById('gardenOption') === null) 
 		biomeElem.innerHTML += "<option id='gardenOption' value='Plentiful'>Gardens</option>";
+	if (game.global.farmlandsUnlocked && document.getElementById('farmlandsOption') === null) 
+		biomeElem.innerHTML += "<option id='farmlandsOption' value='Farmlands'>Farmlands</option>";
 	biomeElem.value = (preset.biome && !fromClick) ? preset.biome : "Random";
 	//bottom row
 	hideAdvMaps(true);
@@ -5925,29 +6003,6 @@ function calculateParityBonus(){
 	game.global.parityBonus = finalWithParity;
 	return finalWithParity;
 }
-
-// function calculateParityBonus(){
-// 	if (!game.global.StaffEquipped || game.global.StaffEquipped.rarity != 10) {
-// 		game.global.parityBonus = 1;
-// 		return;
-// 	}
-// 	var allowed = ["Farmer", "Lumberjack", "Miner"];
-// 	var totalWorkers = 0;
-// 	var workerRatios = [];
-// 	var workersOwned = [];
-// 	for (var x = 0; x < allowed.length; x++){
-// 		var thisWorkers = game.jobs[allowed[x]].owned;
-// 		totalWorkers += thisWorkers;
-// 		workersOwned[x] = thisWorkers;
-// 	}
-// 	for (var x = 0; x < workersOwned.length; x++){
-// 		workerRatios.push(workersOwned[x] / totalWorkers);
-// 	}
-// 	var workerSplit = Math.min(...workerRatios) / Math.max(...workerRatios);
-// 	var parityBonus = getHazardParityMult() + (workerSplit * 3.5);
-// 	game.global.parityBonus = parityBonus;
-// 	return parityBonus;	
-// }
 
 function getHazardParityMult(heirloom){
 	if (!heirloom) heirloom = game.global.StaffEquipped;
@@ -7014,6 +7069,7 @@ function getRandomMapName() {
 	else{
 		roll = Math.floor(Math.random() * (namesObj.suffix.length - 1));
 		suffix = namesObj.suffix[roll];
+		if (suffix == "Farms.Farmland") suffix = "Gardens.Plentiful";
 	}
     return name + " " + suffix;
 }
@@ -8190,7 +8246,7 @@ var mutationEffects = {
 var visualMutations = {
 	Pumpkimp: {
 		active: function (){
-			return false;
+			if (!holidayObj.checkActive("Pumpkimp")) return false;
 			if (game.global.world == 1) return false;
 			if (checkIfSpireWorld()) return false;
 			return (getRandomIntSeeded(game.global.holidaySeed++, 0, 100) < 8);
@@ -8207,7 +8263,7 @@ var visualMutations = {
 	},
 	TrimpmasSnow: {
 		active: function() {
-			return false;
+			if (!holidayObj.checkActive("Snowy")) return false;
 			return (game.options.menu.showSnow.enabled);
 		},
 		pattern: function(currentArray, mutationArray) {
@@ -8513,6 +8569,7 @@ function countTotalHousingBuildings(){
 function scaleNumberForBonusHousing(num){
 	if (getPerkLevel("Carpentry") > 0) num = Math.floor(num * (Math.pow(1 + game.portal.Carpentry.modifier, getPerkLevel("Carpentry"))));
 	if (getPerkLevel("Carpentry_II") > 0) num = Math.floor(num * (1 + (game.portal.Carpentry_II.modifier * getPerkLevel("Carpentry_II"))));
+	num *= alchObj.getPotionEffect("Elixir of Crafting");
 	if (game.global.challengeActive == "Daily" && typeof game.global.dailyChallenge.large !== "undefined")
 		num = Math.floor(num * dailyModifiers.large.getMult(game.global.dailyChallenge.large.strength));
 	if (game.global.challengeActive == "Size")
@@ -9064,6 +9121,10 @@ function addSpecials(maps, countOnly, map, getPrestiges) { //countOnly must incl
 		if (special.locked) continue;
 		if (game.global.universe == 2 && special.blockU2) continue;
 		if (game.global.universe == 1 && special.blockU1) continue;
+		if (game.global.challengeActive == "Pandemonium"){
+			if (maps && special.prestige && game.challenges.Pandemonium.isEquipBlocked(game.upgrades[item].prestiges)) continue;
+			if (!maps && game.challenges.Pandemonium.isEquipBlocked(item)) continue;
+		}
 		if (item == "easterEgg"){
 			game.global.eggSeed += 3;
 			if (seededRandom(game.global.eggSeed) >= special.chance) continue;
@@ -9113,7 +9174,12 @@ function addSpecials(maps, countOnly, map, getPrestiges) { //countOnly must incl
 		if ((special.world == -10) && ((world % 10) !== 0)) continue;
 		if ((special.world == -20) && ((world % 20) !== 0)) continue;
 		if ((special.world == -25) && ((world % 25) !== 0)) continue;
-		if ((maps) && (special.filter) && game.mapConfig.locations[map.location].resourceType != item) continue;
+		
+		if ((maps) && (special.filter)){
+			var mapResType = game.mapConfig.locations[map.location].resourceType;
+			if (mapResType == "Scaling") mapResType = getFarmlandsResType(map);
+			if (mapResType != item) continue;
+		}
 		if (typeof special.specialFilter !== 'undefined'){
 			if (!special.specialFilter(world)) continue;
 		}
@@ -9180,6 +9246,13 @@ function addSpecials(maps, countOnly, map, getPrestiges) { //countOnly must incl
 		if (hasPrestigious && secondBestIndex != bestIndex)
 			array = addSpecialToNthLast(game.mapUnlocks[prestigeItemsAvailable[secondBestIndex]], array, prestigeItemsAvailable[secondBestIndex], 2);
 	}
+}
+
+
+function getFarmlandsResType(map){
+	var rota = ["Any", "Metal", "Wood", "Food", "Gems"];
+	var index = game.global.world % 5;
+	return rota[index];
 }
 
 function findHomeForSpecial(special, item, array, max){
@@ -9782,6 +9855,7 @@ function getHousingMultiplier(){
 	amt = 1;
 	if (getPerkLevel("Carpentry")) amt *= Math.pow((1 + game.portal.Carpentry.modifier), getPerkLevel("Carpentry"));
 	if (getPerkLevel("Carpentry_II") > 0) amt *= (1 + (game.portal.Carpentry_II.modifier * getPerkLevel("Carpentry_II")));
+	amt *= alchObj.getPotionEffect("Elixir of Crafting");
 	return amt;
 }
 
@@ -10189,16 +10263,24 @@ function startFight() {
 				}
 			}
 		}
-		if (game.global.challengeActive == "Mayhem" && !game.global.mapsActive && cellNum == 99){
-			cell.preMayhemHealth = cell.health;
-			cell.health *= game.challenges.Mayhem.getBossMult();
-		}
 		if (game.global.challengeActive == "Nurture"){
 			if (map) cell.health *= 10;
 			else cell.health *= 2;
 			cell.health *= game.buildings.Laboratory.getEnemyMult();
 		}
-		//Storm last so attack and health go back to the right spot on abandon
+		if (game.global.challengeActive == "Alchemy"){
+			var alchMap = (map) ? true : false;
+			var alchVoid = (alchMap && map.location == "Void");
+			var statMult = alchObj.getEnemyStats(alchMap, alchVoid) + 1;
+			cell.attack *= statMult;
+			cell.health *= statMult;
+		}
+		//Mayhem and Storm last so attack and health restore properly
+		if (((game.global.challengeActive == "Mayhem" && cellNum == 99 && !game.global.mapsActive) || game.global.challengeActive == "Pandemonium")){
+			cell.preMayhemHealth = cell.health;
+			if (cellNum == 99 && !game.global.mapsActive) cell.health *= game.challenges[game.global.challengeActive].getBossMult();
+			else cell.health *= game.challenges.Pandemonium.getPandMult();
+		}
 		if (game.global.challengeActive == "Storm" && !map){
 			game.challenges.Storm.cellStartAttack = cell.attack;
 			game.challenges.Storm.cellStartHealth = cell.health;
@@ -10342,6 +10424,9 @@ function startFight() {
 		//Observation
 		if (getPerkLevel("Observation") > 0 && game.portal.Observation.trinkets > 0) game.global.soldierHealthMax *= game.portal.Observation.getMult();
 		if (game.global.mayhemCompletions) game.global.soldierHealthMax *= game.challenges.Mayhem.getTrimpMult();
+		if (game.global.pandCompletions && game.global.universe == 2) game.global.soldierHealthMax *= game.challenges.Pandemonium.getTrimpMult();
+		if (autoBattle.bonuses.Stats.level > 0 && game.global.universe == 2) game.global.soldierHealthMax *= autoBattle.bonuses.Stats.getMult();
+		if (game.global.challengeActive == "Alchemy") game.global.soldierHealthMax *= alchObj.getPotionEffect("Potion of Strength");
 		if (game.talents.mapHealth.purchased && game.global.mapsActive){
 			game.global.soldierHealthMax *= 2;
 			game.global.mapHealthActive = true;
@@ -10484,6 +10569,9 @@ function startFight() {
 			if (getPerkLevel("Toughness_II")) healthTemp *= (1 + (game.portal.Toughness_II.modifier * getPerkLevel("Toughness_II")));
 			if (getPerkLevel("Observation") && game.portal.Observation.trinkets > 0) healthTemp *= game.portal.Observation.getMult();
 			if (game.global.mayhemCompletions) healthTemp *= game.challenges.Mayhem.getTrimpMult();
+			if (autoBattle.bonuses.Stats.level > 0 && game.global.universe == 2) healthTemp *= autoBattle.bonuses.Stats.getMult();
+			if (game.global.challengeActive == "Alchemy") healthTemp *= alchObj.getPotionEffect("Potion of Strength");
+			if (game.global.pandCompletions && game.global.universe == 2) healthTemp *= game.challenges.Pandemonium.getTrimpMult();
 			if (game.talents.mapHealth.purchased && game.global.mapsActive) healthTemp *= 2;
 			if (Fluffy.isRewardActive("healthy")) healthTemp *= 1.5;
 			if (game.jobs.Geneticist.owned > 0) healthTemp *= Math.pow(1.01, game.global.lastLowGen);
@@ -10800,6 +10888,12 @@ function calculateDamage(number, buildString, isTrimp, noCheckAchieve, cell, noF
 		if (game.global.mayhemCompletions){
 			number *= game.challenges.Mayhem.getTrimpMult();
 		}
+		if (autoBattle.bonuses.Stats.level > 0 && game.global.universe == 2) number *= autoBattle.bonuses.Stats.getMult();
+		if (game.global.challengeActive == "Alchemy") number *= alchObj.getPotionEffect("Potion of Strength");
+
+		if (game.global.pandCompletions && game.global.universe == 2){
+			number *= game.challenges.Pandemonium.getTrimpMult();
+		}
 		if (game.global.challengeActive == "Daily"){
 			if (typeof game.global.dailyChallenge.minDamage !== 'undefined'){
 				if (minFluct == -1) minFluct = fluctuation;
@@ -10885,6 +10979,10 @@ function calculateDamage(number, buildString, isTrimp, noCheckAchieve, cell, noF
 			if (game.global.challengeActive == "Wither") number *= game.challenges.Wither.getEnemyAttackMult();
 			if (game.global.challengeActive == "Archaeology") number *= game.challenges.Archaeology.getStatMult("enemyAttack");
 			if (game.global.challengeActive == "Mayhem" && !game.global.mapsActive && cell && cell.level == 100) number *= game.challenges.Mayhem.getBossMult();
+			if (game.global.challengeActive == "Pandemonium"){
+				if (!game.global.mapsActive && cell && cell.level == 100) number *= game.challenges.Pandemonium.getBossMult();
+				else number *= game.challenges.Pandemonium.getPandMult();
+			}
 		}
 		if (game.global.usingShriek) {
 			number *= game.mapUnlocks.roboTrimp.getShriekValue();
@@ -11741,7 +11839,7 @@ function runMapAtZone(index){
 	var setting = game.options.menu.mapAtZone.getSetZone()[index];
 	if (setting.preset == 5 && !game.global.challengeActive == "Quagmire" && setting.check) return;
 	if (setting.preset == 4 && !getNextVoidId() && setting.check) return;
-	if (setting.cell == 100 && game.global.challengeActive == "Mayhem") startFight();
+	if (setting.cell == 100 && (game.global.challengeActive == "Mayhem" || game.global.challengeActive == "Pandemonium")) startFight();
 	mapsClicked(true);
 	if (game.global.spireActive && game.global.lastClearedCell != -1) deadInSpire();
 	toggleSetting('mapAtZone', null, false, true);
@@ -11803,6 +11901,21 @@ function runMapAtZone(index){
 			if (setting.until == 6) game.global.mapCounterGoal = 25;
 			if (setting.until == 7) game.global.mapCounterGoal = 50;
 			if (setting.until == 8) game.global.mapCounterGoal = 100;
+		}
+		return;
+	}
+	else if (setting.preset == 8){
+		var meltMap = -1;
+		for (var x = 0; x < game.global.mapsOwnedArray.length; x++){
+			if (game.global.mapsOwnedArray[x].location == "Melting"){
+				meltMap = x;
+				break;
+			}
+		}
+		if (meltMap > -1){
+			if (game.global.currentMapId) recycleMap();
+			selectMap(game.global.mapsOwnedArray[meltMap].id);
+			runMap();
 		}
 		return;
 	}
@@ -13520,6 +13633,8 @@ function fight(makeUp) {
 		if (game.global.challengeActive == "Wither"){
 			game.challenges.Wither.addStacks();
 		}
+		//All inclusive Challenge Shenanigans
+		if (game.global.mapsActive && game.global.challengeActive && game.challenges[game.global.challengeActive].onMapEnemyKilled) game.challenges[game.global.challengeActive].onMapEnemyKilled(currentMapObj.level);
 		//Html stuff
 		if (cell.overkilled && game.options.menu.overkillColor.enabled){
 			if (game.options.menu.overkillColor.enabled == 2){
@@ -13587,11 +13702,12 @@ function fight(makeUp) {
 			var mapObj = getCurrentMapObject();
 			game.stats.mapsCleared.value++;
 			checkAchieve("totalMaps");
+			alchObj.mapCleared(mapObj);
 			var shouldRepeat = (game.global.repeatMap);
 			var nextBw = false;
 			game.global.mapRunCounter++;
 			if (game.options.menu.repeatUntil.enabled == 0 && game.global.mapCounterGoal > 0) toggleSetting('repeatUntil', null, false, true);
-			if (game.global.challengeActive == "Mayhem") game.challenges.Mayhem.clearedMap(mapObj.level);
+			if (game.global.challengeActive && game.challenges[game.global.challengeActive].clearedMap) game.challenges[game.global.challengeActive].clearedMap(mapObj.level);
 			var mapBonusEarned = 0;
 			if ((currentMapObj.level >= (game.global.world - getPerkLevel("Siphonology"))) && game.global.mapBonus < 10) mapBonusEarned = 1;
 			game.global.mapBonus += mapBonusEarned;
@@ -13919,6 +14035,7 @@ function fight(makeUp) {
 		}
 	}
 	//After attack stuff
+	if (wasAttacked && !game.global.mapsActive && cellNum == 99 && game.global.challengeActive && game.challenges[game.global.challengeActive].onBossAttack) game.challenges[game.global.challengeActive].onBossAttack();
 	if (game.global.challengeActive == "Mayhem" && attacked){
 		game.global.soldierHealth -= game.challenges.Mayhem.poison;
 		if (game.global.soldierHealth < 0) thisKillsTheTrimp();
@@ -14318,6 +14435,7 @@ function getPlayerCritDamageMult(){
 	critMult += (getPerkLevel("Criticality") * game.portal.Criticality.modifier);
 	if (relentLevel > 0) critMult += 1;
 	if (game.challenges.Nurture.boostsActive() && game.challenges.Nurture.getLevel() >= 5) critMult += 0.5;
+	critMult += alchObj.getPotionEffect("Elixir of Accuracy");
 	return critMult;
 }
 
@@ -14862,9 +14980,17 @@ function simpleSeconds(what, seconds) {
 		var amt = job.owned * job.modifier * seconds;
 		amt += (amt * getPerkLevel("Motivation") * game.portal.Motivation.modifier);
 		if (getPerkLevel("Motivation_II") > 0) amt *= (1 + (getPerkLevel("Motivation_II") * game.portal.Motivation_II.modifier));
+		if (what != "science" && what != "fragments"){
+			if (game.global.challengeActive == "Alchemy") amt *= alchObj.getPotionEffect("Potion of Finding");
+			else amt *= alchObj.getPotionEffect("Elixir of Finding");
+		}
+		if (game.global.pandCompletions && game.global.universe == 2 && what != "fragments") amt *= game.challenges.Pandemonium.getTrimpMult();
 		if (getPerkLevel("Observation") > 0 && game.portal.Observation.trinkets > 0) amt *= game.portal.Observation.getMult();
 		if (getPerkLevel("Meditation") > 0) amt *= (1 + (game.portal.Meditation.getBonusPercent() * 0.01));
-		if (what == "food" || what == "wood" || what == "metal") amt *= getParityBonus();
+		if (what == "food" || what == "wood" || what == "metal"){
+			amt *= getParityBonus();
+			if (autoBattle.oneTimers.Gathermate.owned) amt *= autoBattle.oneTimers.Gathermate.getMult();
+		}
 		if ((what == "food" && game.buildings.Antenna.owned >= 5) || (what == "metal" && game.buildings.Antenna.owned >= 15)) amt *= game.jobs.Meteorologist.getExtraMult();
 		if (Fluffy.isRewardActive('gatherer')) amt *= 2;
 		if (game.jobs.Magmamancer.owned > 0 && what == "metal") amt *= game.jobs.Magmamancer.getBonusPercent();
@@ -14938,6 +15064,8 @@ function scaleLootBonuses(amt, ignoreScry){
 	if (game.unlocks.impCount.Magnimp) amt *= Math.pow(1.003, game.unlocks.impCount.Magnimp);
 	if (getPerkLevel("Looting")) amt += (amt * getPerkLevel("Looting") * game.portal.Looting.modifier);
 	if (getPerkLevel("Looting_II")) amt *= (1 + (getPerkLevel("Looting_II") * game.portal.Looting_II.modifier));
+	if (game.global.challengeActive == "Alchemy") amt *= alchObj.getPotionEffect("Potion of Finding");
+	else amt *= alchObj.getPotionEffect("Elixir of Finding");
 	if (getPerkLevel("Greed")) amt *= game.portal.Greed.getMult();
 	if (Fluffy.isRewardActive("wealthy")) amt *= 2;
 	if (getUberEmpowerment() == "Wind") amt *= 10;
@@ -14962,10 +15090,18 @@ function addBoost(level, previewOnly) {
 		var amt = job.owned * job.modifier * add;
 		amt += (amt * getPerkLevel("Motivation") * game.portal.Motivation.modifier);
 		if (getPerkLevel("Motivation_II") > 0) amt *= (1 + (getPerkLevel("Motivation_II") * game.portal.Motivation_II.modifier));
+		if (job != "Explorer"){
+			if (game.global.challengeActive == "Alchemy") amt *= alchObj.getPotionEffect("Potion of Finding");
+			else amt *= alchObj.getPotionEffect("Elixir of Finding");
+		}
+		if (game.global.pandCompletions && job != "Explorer" && game.global.universe == 2) amt *= game.challenges.Pandemonium.getTrimpMult();
 		if (getPerkLevel("Observation") > 0 && game.portal.Observation.trinkets > 0) amt *= game.portal.Observation.getMult();
 		if (getPerkLevel("Meditation") > 0) amt *= (1 + (game.portal.Meditation.getBonusPercent() * 0.01));
 		if (Fluffy.isRewardActive('gatherer')) amt *= 2;
-		if (resource == "food" || resource == "wood" || resource == "metal") amt *= getParityBonus();
+		if (resource == "food" || resource == "wood" || resource == "metal"){
+			amt *= getParityBonus();
+			if (autoBattle.oneTimers.Gathermate.owned) amt *= autoBattle.oneTimers.Gathermate.getMult();
+		}
 		if (game.jobs.Magmamancer.owned > 0 && job.increase == "metal") amt *= game.jobs.Magmamancer.getBonusPercent();
 		if (game.global.challengeActive == "Meditate") amt *= 1.25;
 		if (game.global.challengeActive == "Toxicity"){
@@ -16200,11 +16336,19 @@ function getCheapestPrestigeUpgrade(upgradeArray) {
 		var mtMult = dailyModifiers.metallicThumb.getMult(game.global.dailyChallenge.metallicThumb.strength);
 		artMult = (artMult == -1) ? mtMult : artMult * mtMult;
 	}
+	if (autoBattle.oneTimers.Artisan.owned && game.global.universe == 2){
+		var mod = autoBattle.oneTimers.Artisan.getMult();
+		artMult = (artMult == -1) ? mod : artMult * mod;
+	}
 	if (game.global.challengeActive == "Obliterated"){
 		artMult = (artMult == -1) ? 1e12 : (1e12 * artMult);
 	}
 	if (game.global.challengeActive == "Eradicated"){
 		var mod = game.challenges.Eradicated.scaleModifier
+		artMult = (artMult == -1) ? mod : (mod * artMult);
+	}
+	if (game.global.challengeActive == "Pandemonium"){
+		var mod = game.challenges.Pandemonium.getEnemyMult();
 		artMult = (artMult == -1) ? mod : (mod * artMult);
 	}
 	for (var x = 0; x < upgradeArray.length; x++) {
@@ -16446,6 +16590,9 @@ var Fluffy = {
 			var knowBonus = playerSpireTraps.Knowledge.getWorldBonus();
 			reward *= (1 + (knowBonus / 100));
 		}
+		if (autoBattle.oneTimers.Battlescruff.owned && game.global.universe == 2){
+			reward *= (1 + ((autoBattle.maxEnemyLevel - 1) / 100));
+		}
 		if (count) reward *= count;
 		if (getHeirloomBonus("Staff", "FluffyExp") > 0){
 			reward *= (1 + (getHeirloomBonus("Staff", "FluffyExp") / 100));
@@ -16602,6 +16749,9 @@ var Fluffy = {
 				return;
 			case "labs":
 				elem.innerHTML = 'From Nurture. Increases Exp gain by 10% (compounding) per constructed Laboratory. Currently granting ' + prettify(game.buildings.Laboratory.getExpMult()) + 'x.';
+				return;
+			case "battlescruff":
+				elem.innerHTML = 'From the Battlescruff AutoBattle reward. Increases Scruffy XP gained by 1% per level cleared, currently granting ' + prettify(1 + ((autoBattle.maxEnemyLevel - 1) / 100)) + 'x.';
 		}
 	},
 	cruffysToggled: false,
@@ -16704,6 +16854,7 @@ var Fluffy = {
 			if (Fluffy.specialExpModifier > 1) fluffFormula += ' * <span class="fluffFormSpecial" onmouseover="Fluffy.expBreakdown(\'special\')" onmouseout="Fluffy.expBreakdown(\'clear\')">' + Fluffy.specialExpModifier + "</span>";
 			if (getUberEmpowerment() == "Ice") fluffFormula += ' * <span class="fluffFormIce" onmouseover="Fluffy.expBreakdown(\'ice\')" onmouseout="Fluffy.expBreakdown(\'clear\')">Ice</span>';
 			if (showCruffys) fluffFormula += ' * <span class="fluffFormLab" onmouseover="Fluffy.expBreakdown(\'labs\')" onmouseout="Fluffy.expBreakdown(\'clear\')">Labs</span>';
+			if (game.global.universe == 2 && autoBattle.oneTimers.Battlescruff.owned) fluffFormula += ' * <span class="fluffFormBattlescruff" onmouseover="Fluffy.expBreakdown(\'battlescruff\')" onmouseout="Fluffy.expBreakdown(\'clear\')">Battlescruff</span>';
 			fluffFormula = fluffFormula.replace('Zone', '<span onmouseover="Fluffy.expBreakdown(\'zone\')" onmouseout="Fluffy.expBreakdown(\'clear\')" class="fluffFormZone">Zone</span>');
 			fluffFormula = fluffFormula.replace('Cunning', '<span onmouseover="Fluffy.expBreakdown(\'cunning\')" onmouseout="Fluffy.expBreakdown(\'clear\')" class="fluffFormCunning">Cunning</span>')
 			fluffFormula = fluffFormula.replace('Curious', '<span onmouseover="Fluffy.expBreakdown(\'curious\')" onmouseout="Fluffy.expBreakdown(\'clear\')" class="fluffFormCurious">Curious</span>')			
@@ -17383,6 +17534,10 @@ function gameLoop(makeUp, now) {
     battleCoordinator(makeUp);
 	if (game.global.titimpLeft) game.global.titimpLeft -= 0.1;
 	loops++;
+	//every 300ms
+	if (loops % 3 == 0){
+		autoBattle.update();
+	}
 	//every 400ms
 	if (loops % 4 == 0){
 		buyAutoStructures();
@@ -17401,6 +17556,7 @@ function gameLoop(makeUp, now) {
 			mutations.Living.change();
 		}
 		if (usingScreenReader) screenReaderSummary();
+		if ((game.global.alchemyUnlocked && game.global.universe == 2) || game.global.challengeActive == "Alchemy") alchObj.autoCraft();
 	}
 	if (bwRewardUnlocked("AutoJobs")){
 		//Ratio jobs every 30 seconds (or every zone, see nextWorld)
@@ -17459,6 +17615,7 @@ function runEverySecond(makeUp){
 	if (playerSpire.initialized)
 		playerSpire.moveEnemies(makeUp);
 	trackAchievement();
+	holidayObj.checkAll();
 }
 
 function getGameTime(){
@@ -17767,6 +17924,7 @@ document.addEventListener('keyup', function(e) {
 
 load();
 if (game.global.isBeta) message("Note: You are playing on the beta/dev version. You will be unable to export your save from this version to the live version, and this server may go down or change without warning. Thank you for helping test!", "Notices");
+holidayObj.checkAll();
 displayPerksBtn();
 
 setTimeout(autoSave, 60000);
