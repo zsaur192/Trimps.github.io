@@ -48,6 +48,12 @@ var alchObj = {
     tab: document.getElementById('alchemyTab'),
     load: function(){
         if (game.global.potionData != null) this.potionsOwned = game.global.potionData;
+        else {
+            for (var x = 0; x < this.potionsOwned.length; x++){
+                this.potionsOwned[x] = 0;
+                this.potionAuto[x] = 0;
+            }
+        }
         if (game.global.potionAuto != null) this.potionAuto = game.global.potionAuto;
         if (this.potionsOwned.length < this.potionNames.length){
             var need = this.potionNames.length - this.potionsOwned.length;
@@ -66,39 +72,32 @@ var alchObj = {
         Gems: "Firebloom",
         Any: "Berries",
     },
-    potionNames: ["Herby Potion", "Potion of Finding", "Gaseous Potion", "Potion of the Void", "Potion of Strength", "Elixir of Crafting", "Elixir of Finding", "Elixir of Accuracy"],
+    potionNames: ["Herby Brew", "Gaseous Brew", "Potion of Finding", "Potion of the Void", "Potion of Strength", "Elixir of Crafting", "Elixir of Finding", "Elixir of Accuracy"],
     potionsOwned: [0,0,0,0,0,0,0,0],
     potionAuto: [0,0,0,0,0,0,0,0],
     getRunetrinketMult: function(chance){
         var notFind = 100 - chance;
-        notFind *= Math.pow(0.95, this.potionsOwned[1]);
+        notFind *= Math.pow(0.98, this.potionsOwned[2]);
         return (100 - notFind);
     },
     getRunetrinketBonusAmt: function(){
         var world = (game.global.world < 101) ? 101 : game.global.world;
         var orig = game.portal.Observation.getDropChance(world);
-        var newMult = this.getRunetrinketMult(orig);
-        return newMult - orig;
+        var newMult = game.portal.Observation.getDropChance(world, true);
+        return orig - newMult;
     },
     potions: [
         {
             challenge: true,
             cost: [["Potatoes",5,10]],
-            description: "Increases all Herbs found by 500%. <span class='red'>Increases Enemy Attack/Health by 10% (compounding)</span>",
+            description: "Increases all Herbs found by 100% (compounding). <span class='red'>Increases Enemy Attack/Health by 50% (compounding)</span>",
             effectText: "+#% Herbs found",
-            enemyMult: 1.1,
-            effect: 5,
+            enemyMult: 1.5,
+            effectComp: 2,
         },
         {
             challenge: true,
-            cost: [["Mushrooms",5,4]],
-            description: "Increases all non-radon resources earned by 25% additively. Reduces chance to not find a Runetrinket by 5% (compounding). <span class='red'>Increases the cost of all other Potions by 50% (compounding)</span>",
-            effectText: "+#% res",
-            effect: 0.25,
-        },
-        {
-            challenge: true,
-            cost: [["Seaweed",5,10]],
+            cost: [["Mushrooms",5,5]],
             description: "Increases all Radon gained by 10% (compounding). <span class='red'>Increases Enemy Attack/Health by 30% (compounding)</span>",
             effectText: "+#% Radon",
             enemyMult: 1.3,
@@ -106,8 +105,16 @@ var alchObj = {
         },
         {
             challenge: true,
+            cost: [["Seaweed",5,4]],
+            description: "Increases all non-radon resources earned by 25% additively. Reduces chance to not find a Runetrinket by 2% (compounding). <span class='red'>Increases the cost of all other Potions by 50% (compounding)</span>",
+            effectText: "+#% res",
+            effect: 0.25,
+        },
+
+        {
+            challenge: true,
             cost: [["Firebloom",5,4]],
-            description: "Nullifies 5% (compounding) of increased enemy stats from Elixirs while in Void Maps. <span class='red'>Increases the cost of all other Potions by 50% (compounding)</span>",
+            description: "Nullifies 5% (compounding) of increased enemy stats from Potions while in Void Maps. <span class='red'>Increases the cost of all other Potions by 50% (compounding)</span>",
             effectText: "#% nullified void stats",
             effectComp: 0.95,
             inverseComp: true
@@ -189,8 +196,9 @@ var alchObj = {
 
     },
     getRadonMult: function(){
+        if (game.global.challengeActive != "Alchemy") return 1;
         var base = 51;
-        base *= this.getPotionEffect("Gaseous Potion");
+        base *= this.getPotionEffect("Gaseous Brew");
         return base;
     },
     getPotionCount: function(potionName){
@@ -199,8 +207,8 @@ var alchObj = {
     getEnemyStats: function(map, voidMap){
         //Challenge only
         var baseMod = 0.1;
-        baseMod *= Math.pow(this.potions[0].enemyMult, this.potionsOwned[0]); //Herby potion
-        baseMod *= Math.pow(this.potions[2].enemyMult, this.potionsOwned[2]); //Gaseous potion
+        baseMod *= Math.pow(this.potions[0].enemyMult, this.potionsOwned[0]); //Herby Brew
+        baseMod *= Math.pow(this.potions[1].enemyMult, this.potionsOwned[1]); //Gaseous Brew
         if (voidMap) {
             baseMod *= 10;
             if (this.potionsOwned[3] > 0) baseMod *= this.getPotionEffect("Potion of the Void");
@@ -225,11 +233,9 @@ var alchObj = {
         if (amt <= 0) return;
         if (game.global.challengeActive == "Alchemy"){
             game.herbs[resource].cowned += amt;
-            game.herbs[resource].cfound += amt;
         }
         else{
             game.herbs[resource].owned += amt;
-            game.herbs[resource].found += amt;
         }
         message("You found " + prettify(amt) + " " + resource + "!", "Loot", "*leaf3", "alchemy", "alchemy");
         this.openPopup(true);
@@ -265,17 +271,22 @@ var alchObj = {
         if (dif < 0) return 0;
         var base = ((2 + (Math.floor(world / 10) * 5)) * Math.pow(this.zoneScale, world));
         base = Math.floor(base * Math.pow(this.extraMapScale, dif));
-        base *= this.getPotionEffect("Herby Potion");
+        base *= this.getPotionEffect("Herby Brew");
         return base;
     },
     openPopup: function(updateOnly){
-        if (updateOnly && (lastTooltipTitle != "Alchemy" || !game.global.lockTooltip)) return; 
-        var text = "<div class='alchemyTitle'>Herbs</div>";
+        if (updateOnly && (lastTooltipTitle != "Alchemy" || !game.global.lockTooltip)) return;
+        var herbContainer = (updateOnly) ? document.getElementById('alchHerbContainer') : null;
+        if (updateOnly && !herbContainer) updateOnly = false;
+        var text = (updateOnly) ? "" : "<div class='alchemyTitle'>Herbs</div><div id='alchHerbContainer'>";
         var ownedName = (game.global.challengeActive == "Alchemy") ? "cowned" : "owned";
-        var foundName = (game.global.challengeActive == "Alchemy") ? "cfound" : "found";
         for (var herb in game.herbs){
-            text += "<div class='alchemyPopupHerb'><span class='alchemyPopupName'>" + herb + "</span><br/>" + prettify(game.herbs[herb][ownedName]) + " Stored<br/>" + prettify(game.herbs[herb][foundName]) + " Found" + "</div>";
+            text += "<div class='alchemyPopupHerb'><span class='alchemyPopupName'>" + herb + "</span><br/>" + prettify(game.herbs[herb][ownedName]) + "</div>";
         }
+        if (updateOnly){
+            herbContainer.innerHTML = text;
+        }
+        else text += "</div>";
         text += "<div class='alchemyTitle'>Crafts</div>";
         text += "<table id='alchemyCraftTable'><tbody><tr>"
         var count = 0;
@@ -290,27 +301,42 @@ var alchObj = {
             else effectAmt--;
             var effectText = prettify(this.potionsOwned[x]) + " owned, " + potion.effectText.replace("#", prettify((effectAmt) * 100));
             if (name == "Potion of Finding") effectText += ", +" + prettify(this.getRunetrinketBonusAmt()) + "% RT chance"
-            var btnClass = (this.canAffordPotion(name)) ? "btn-success" : "btn-disabled";
-            text += "<td class='alchemyPopupCraft'><div class='alchemyPopupName'>" + name + "</div><span onclick='alchObj.craftPotion(\"" + name + "\")' class='btn btn-sm " + btnClass + "' style='width: 80%; margin-left: 10%;'>Craft</span><br/><span class='alchemyPotionEffect'>" + effectText + "</span><br/><span class='alchemyCraftCost'>" + this.getPotionCost(name, true) + "</span><div class='alchemyAuto'>AutoCraft up to: <input value='" + this.potionAuto[x] + "' type='number' id='potionAuto" + x + "' /></div><span class='alchemyCraftDescription'>" + potion.description + "</span></td>";
+            var btnClass = (this.canAffordPotion(name)) ? "colorSuccess" : "colorDisabled";
+            if (updateOnly){
+                var craftBtn = document.getElementById('alchCraftBtn' + x);
+                if (!craftBtn) {
+                    cancelTooltip();
+                    console.log('button not found for refresh');
+                    return;
+                }
+                swapClass('color', btnClass, craftBtn);
+                document.getElementById('alchPotionEffect' + x).innerHTML = effectText;
+                document.getElementById('alchPotionCost' + x).innerHTML = this.getPotionCost(name, true);
+            }
+            else
+            text += "<td class='alchemyPopupCraft " + ((potion.enemyMult) ? 'brew' : 'potion') + "'><div class='alchemyPopupName'>" + name + "</div><span id='alchCraftBtn" + x + "' onclick='alchObj.craftPotion(\"" + name + "\")' class='btn btn-sm " + btnClass + "' style='width: 80%; margin-left: 10%;'>Craft</span><br/><span id='alchPotionEffect" + x + "' class='alchemyPotionEffect'>" + effectText + "</span><br/><span id='alchPotionCost" + x + "' class='alchemyCraftCost'>" + this.getPotionCost(name, true) + "</span><div class='alchemyAuto'>AutoCraft up to: <input value='" + this.potionAuto[x] + "' type='number' id='potionAuto" + x + "' /></div><span class='alchemyCraftDescription'>" + potion.description + "</span></td>";
+            
             count++;
         }
-        text += "</tr></tbody></table>";
+        text += "</tr></tbody></table><div id='alchBottomText'>";
+        if (updateOnly) text = "";
         if (game.global.challengeActive == "Alchemy"){
             text += "<div class='alchemyEnemyStats'>Enemies in this dimension are enchanted, gaining +" + prettify(this.getEnemyStats(false, false) * 100) + "% enemy stats in World, +" + prettify(this.getEnemyStats(true, false) * 100) + "% in Maps, and +" + prettify(this.getEnemyStats(true, true) * 100) + "% in Void Maps. All Radon drops are increased by " + prettify((this.getRadonMult() - 1)  * 100) + "%.";
             text += "</div>";
         }
         text += "<div class='alchemyTitle'>Drop Rates</div><table id='alchemyDropsTable'><tbody>";
-        var row1 = "<tr><td style='font-weight: bold'>Map Level</td>";
-        var row2 = "<tr><td style='font-weight: bold'>Drop Amt</td>";
+        var row1 = "<tr><td style='font-weight: bold; font-style: italic'>Map Level</td>";
+        var row2 = "<tr><td style='font-weight: bold; font-style: italic'>Drop Amt</td>";
         for (var y = game.global.world - 1; y <= game.global.world + 10; y++){
             row1 += "<td>" + y + "</td>";
             row2 += "<td>" + prettify(this.getDropRate(y)) + "</td>";
         }
         text += row1 + "</tr>" + row2 + "</tr></tbody></table>";
         if (updateOnly){
-            document.getElementById('tipText').innerHTML = text;
+            document.getElementById('alchBottomText').innerHTML = text;
             return;
         }
+        text += "</div>";
         tooltip('confirm', null, 'update', text, 'alchObj.save()', 'Alchemy', 'Save and Close')
     },
     autoCraft: function(){
@@ -338,7 +364,6 @@ var alchObj = {
             if (this.potions[x].challenge) this.potionsOwned[x] = 0;
         }
         for (var herb in game.herbs){
-            game.herbs[herb].cfound = 0;
             game.herbs[herb].cowned = 0;
         }
         if (!game.global.alchemyUnlocked) this.tab.style.display = 'none';
@@ -362,9 +387,16 @@ var autoBattle = {
     notes: "&nbsp;",
     popupMode: "items",
     battleTime: 0,
+    lastSelect: "",
+    lastActions: [],
     lootAvg: {
         accumulator: 0,
         counter: 0
+    },
+    presets: {
+        p1: [],
+        p2: [],
+        p3: []
     },
     template: function(){
         return {
@@ -387,6 +419,8 @@ var autoBattle = {
             poisonTime: 0,
             poisonMod: 0,
             poisonStack: 2,
+            poisonTick: 1000,
+            poisonHeal: 0,
             defense: 0,
             lifesteal: 0,
             shockResist: 0,
@@ -402,11 +436,14 @@ var autoBattle = {
                 time: 0,
                 mod: 0,
                 lastTick: 0,
-                stacks: 0
+                stacks: 0,
+                expired: false,
+                hitsAtMax: 0
             },
             shock: {
                 time: 0,
                 mod: 0,
+                count: 0,
             }
         }
     },
@@ -423,6 +460,7 @@ var autoBattle = {
         this.trimp = null;
         this.enemy = null;
         this.enemiesKilled = 0;
+        this.lastActions = [];
         this.resetStats();
         for (var item in this.items){
             item = this.items[item];
@@ -437,6 +475,9 @@ var autoBattle = {
         for (var oneTimer in this.oneTimers){
             this.oneTimers[oneTimer].owned = false;
         }
+        this.presets.p1 = [];
+        this.presets.p2 = [];
+        this.presets.p3 = [];
     },
     save: function(){
         var data = {};
@@ -445,6 +486,8 @@ var autoBattle = {
         data.enemiesKilled = this.enemiesKilled;
         data.maxEnemyLevel = this.maxEnemyLevel;
         data.autoLevel = this.autoLevel;
+        data.lastActions = this.lastActions;
+        data.presets = this.presets;
         data.items = {};
         for (var item in this.items){
             var thisItem = this.items[item];
@@ -486,6 +529,13 @@ var autoBattle = {
         this.enemiesKilled = data.enemiesKilled;
         this.maxEnemyLevel = data.maxEnemyLevel;
         this.autoLevel = data.autoLevel;
+        if (data.presets) this.presets = data.presets;
+        else{
+            this.presets.p1 = [];
+            this.presets.p2 = [];
+            this.presets.p3 = [];
+        }
+        if (data.lastActions) this.lastActions = data.lastActions;
         for (var item in this.items){
             var saveItem = data.items[item];
             var thisItem = this.items[item];
@@ -518,6 +568,28 @@ var autoBattle = {
             this.oneTimers[oneTimer].owned = true;
         }
         this.resetCombat(true);
+    },
+    savePreset: function(slot){
+        this.presets[slot] = [];
+        for (var item in this.items){
+            if (this.items[item].equipped) this.presets[slot].push(item);
+        }
+        this.popup(true, false, true);
+    },
+    loadPreset: function(slot){
+        var preset = this.presets[slot];
+        var plength = preset.length;
+        if (plength > this.getMaxItems()) plength = this.getMaxItems();
+        for (var item in this.items){
+            this.items[item].equipped = false;
+        }
+        for (var x = 0; x < plength; x++){
+            if (!this.items[preset[x]].owned) continue;
+            this.items[preset[x]].equipped = true;
+        }
+        this.popupMode = 'items';
+        this.resetCombat(true);
+        this.popup(true, false, true);
     },
     getItemOrder: function(){
         var items = [];
@@ -636,7 +708,7 @@ var autoBattle = {
             hidden: false,
             level: 1,
             description: function(){
-                return "Can create a poison on the enemy for 10 seconds. +" + prettify(this.effect()) + " Poison Damage. +25% Poison Chance, doubled if the enemy is bleeding."
+                return "Can create a poison on the enemy for 10 seconds. +" + prettify(this.effect()) + " Poison Damage. +25% Poison Chance, doubled if the enemy is bleeding or shocked."
             },
             upgrade: "+1 poison damage",
             effect: function(){
@@ -644,7 +716,7 @@ var autoBattle = {
             },
             doStuff: function(){
                 autoBattle.trimp.poisonMod += this.effect();
-                autoBattle.trimp.poisonChance += (autoBattle.enemy.bleed.time > 0) ? 50 : 25;
+                autoBattle.trimp.poisonChance += (autoBattle.enemy.shock.time > 0 || autoBattle.enemy.bleed.time > 0) ? 50 : 25;
                 if (autoBattle.trimp.poisonTime < 10000) autoBattle.trimp.poisonTime = 10000;
             },
             priceMod: 6,
@@ -656,14 +728,14 @@ var autoBattle = {
             hidden: false,
             level: 1,
             description: function(){
-                return "Can create a Shock on the enemy for 10 seconds. +" + prettify(this.shockMod() * 100) + "% Shock Damage. +35% Shock Chance, doubled if the enemy is bleeding.";
+                return "Can create a Shock on the enemy for 10 seconds. +" + prettify(this.shockMod() * 100) + "% Shock Damage. +35% Shock Chance, doubled if the enemy is bleeding or poisoned.";
             },
             upgrade: "+10% Shock Damage",
             shockMod: function(){
                 return 0.15 + (0.1 * this.level);
             },
             doStuff: function(){
-                autoBattle.trimp.shockChance += (autoBattle.enemy.bleed.time > 0) ? 70 : 35;
+                autoBattle.trimp.shockChance += (autoBattle.enemy.bleed.time > 0 || autoBattle.enemy.poison.time > 0) ? 70 : 35;
                 autoBattle.trimp.shockMod += this.shockMod();
                 autoBattle.trimp.shockTime = 10000;
             },
@@ -696,7 +768,7 @@ var autoBattle = {
             level: 1,
             zone: 78,
             description: function(){
-                return "-10% Attack Time if the enemy is Poisoned. Poisons you inflict last at least " + prettify(this.poisonTime() / 1000) + " seconds. +" + prettify(this.poisonChance()) + "% Poison Chance.";
+                return "-10% Attack Time and +" + prettify(this.defense()) + " Defense if the enemy is Poisoned. Poisons you inflict last at least " + prettify(this.poisonTime() / 1000) + " seconds. +" + prettify(this.poisonChance()) + "% Poison Chance.";
             },
             upgrade: "+1s Poison Duration, +6% Poison Chance",
             poisonTime: function(){
@@ -705,8 +777,14 @@ var autoBattle = {
             poisonChance: function(){
                 return 14 + (this.level * 6);
             },
+            defense: function(){
+                return 7 + (3 * this.level);
+            },
             doStuff: function(){
-                if (autoBattle.enemy.poison.time > 0) autoBattle.trimp.attackSpeed *= 0.9;
+                if (autoBattle.enemy.poison.time > 0){
+                    autoBattle.trimp.attackSpeed *= 0.9;
+                    autoBattle.trimp.defense += this.defense();
+                }
                 autoBattle.trimp.poisonTime = this.poisonTime();
                 autoBattle.trimp.poisonChance += this.poisonChance();
             },
@@ -723,7 +801,7 @@ var autoBattle = {
                 var stacks = this.poisonStack();
                 return "+50% Poison Chance if the enemy is not already poisoned. +" + this.defenseEffect() + " defense if the enemy is poisoned. +" + prettify(this.poisonChance()) + "% Poison Chance. Poisons you inflict can stack " + stacks + " more time" + needAnS(stacks) + ".";
             },
-            upgrade: "+1 Max Poison Stack per 5 levels. +1 Defense, +4% standard Poison Chance",
+            upgrade: "+1 Max Poison Stack per 4 levels. +1 Defense, +4% standard Poison Chance",
             defenseEffect: function(){
                 return this.level;
             },
@@ -731,7 +809,7 @@ var autoBattle = {
                 return 6 + (this.level * 4);
             },
             poisonStack: function(){
-                var levels = Math.floor(this.level / 5);
+                var levels = Math.floor(this.level / 4);
                 return 1 + levels;
             },
             doStuff: function(){
@@ -796,15 +874,19 @@ var autoBattle = {
             level: 1,
             zone: 95,
             description: function(){
-                return "-" + prettify((1 - this.effect()) * 100) + "% Attack Time if the enemy is not Poisoned or Bleeding."
+                return "-" + prettify((1 - this.effect()) * 100) + "% Attack Time and +" + prettify(this.defense()) + " Defense if the enemy is not Bleeding."
             },
-            upgrade: "-4% Attack Time (compounding)",
+            upgrade: "-4% Attack Time (compounding), +4 Defense",
             effect: function(){
                 return 0.885 * Math.pow(0.96, this.level);
             },
+            defense: function(){
+                return 6 + (4 * this.level);
+            },
             doStuff: function(){
-                if (autoBattle.enemy.bleed.time <= 0 && autoBattle.enemy.poison.time <= 0){
+                if (autoBattle.enemy.bleed.time <= 0){
                     autoBattle.trimp.attackSpeed *= this.effect();
+                    autoBattle.trimp.defense += this.defense();
                 }
             },
             priceMod: 4,
@@ -817,17 +899,18 @@ var autoBattle = {
             level: 1,
             zone: 98,
             description: function(){
-                return "Heal for " + prettify(this.healAmt()) + " per stack of Poison whenever one of your poisons deals damage. Your Poisons tick " + prettify(this.tickIncrease() * 100) + "% faster.";
+                return "Heal for " + prettify(this.healAmt()) + " per stack of Poison whenever one of your poisons deals damage. Your Poisons tick " + prettify((1 - this.tickMult()) * 100) + "% faster.";
             },
             upgrade: "+0.5 Heal on Poison Tick, +1% Poison Tick Speed",
             healAmt: function(){
                 return 0.5 + (0.5 * this.level);
             },
-            tickIncrease: function(){
-                return 0.09 + (0.01 * this.level);
+            tickMult: function(){
+                return 0.909 * Math.pow(0.99, this.level);
             },
-            tickTime: function(){
-                return 1000 * (1 - this.tickIncrease());
+            doStuff: function(){
+                autoBattle.trimp.poisonTick *= this.tickMult();
+                autoBattle.trimp.poisonHeal += this.healAmt();
             },
             priceMod: 5,
             startPrice: 2000
@@ -839,7 +922,7 @@ var autoBattle = {
             level: 1,
             zone: 100,
             description: function(){
-                return "+" + prettify(this.effect() * 100) + "% Lifesteal. Your Trimps' Lifesteal heals twice as much off of bleed damage.";
+                return "+" + prettify(this.effect() * 100) + "% Lifesteal. Your Trimps' Lifesteal heals twice as much off of Bleed damage.";
             },
             upgrade: "+5% Lifesteal",
             effect: function(){
@@ -981,7 +1064,7 @@ var autoBattle = {
             level: 1,
             zone: 118,
             description: function(){
-                return "+" + this.defenseEffect() + " Defense. If Trimp health is higher than enemy health, gain +" + prettify(this.shockChance()) + "% chance to shock, +" + prettify(this.shockMod() * 100) + "% shock damage, 15s shock time. Otherwise, this item's defense is doubled and gain +" + prettify(this.lifestealEffect() * 100) + "% Lifesteal";
+                return "+" + this.defenseEffect() + " Defense. If Trimp health is higher than enemy health, gain +" + prettify(this.shockChance()) + "% Shock Chance, +" + prettify(this.shockMod() * 100) + "% Shock Damage, 15s Shock Time. Otherwise, this item's Defense is doubled and gain +" + prettify(this.lifestealEffect() * 100) + "% Lifesteal";
             },
             upgrade: "+4 Defense, +10% Shock Chance, +10% Shock Damage, +10% Lifesteal",
             defenseEffect: function(){
@@ -1045,17 +1128,20 @@ var autoBattle = {
             level: 1,
             zone: 123,
             description: function(){
-                return "+" + prettify(this.bleedChance()) + "% to Bleed Chance, +" + prettify(this.attack()) + " Attack, -25% Enemy Attack Time, -25% Enemy Attack Damage. Fills up 25% of your Attack Speed bar whenever you cause or receive a bleed.";
+                return "+" + prettify(this.bleedChance()) + "% to Bleed Chance, +" + prettify(this.attack()) + " Attack, -25% Enemy Attack Time, -25% Enemy Attack Damage. Fills up " + prettify(this.barFill() * 100) + "% of your Attack Speed bar whenever you cause or receive a bleed.";
             },
-            upgrade: "+5% Bleed Chance, +2 Attack",
+            upgrade: "+5% Bleed Chance, +2 Attack, +5% bar filled on Bleed",
             attack: function(){
                 return 6 + (this.level * 2)
             },
             onBleed: function(){
-                autoBattle.trimp.lastAttack += (autoBattle.trimp.attackSpeed * 0.25);
+                autoBattle.trimp.lastAttack += (autoBattle.trimp.attackSpeed * this.barFill());
             },
             bleedChance: function(){
                 return 25 + (5 * this.level);
+            },
+            barFill: function(){
+                return 0.20 + (0.05 * this.level);
             },
             doStuff: function(){
                 autoBattle.trimp.bleedChance += this.bleedChance();
@@ -1097,9 +1183,9 @@ var autoBattle = {
             level: 1,
             zone: 130,
             description: function(){
-                return "+" + prettify(this.shockChance()) + "% Shock Chance, +" + prettify(this.shockMod() * 100) + "% Shock Damage. If the enemy is shocked, gain -" + prettify((1 - this.attackSpeed()) * 100) + "% Attack Speed. When shocking a non-shocked enemy, they lose all progress towards their attack.";
+                return "+" + prettify(this.shockChance()) + "% Shock Chance, +" + prettify(this.shockMod() * 100) + "% Shock Damage, +" + prettify(this.shockResist()) + "% Shock Resist. -" + prettify((1 - this.attackSpeed()) * 100) + "% Attack Time if the enemy is Shocked. When you Shock an enemy, they lose all progress towards their attack. +" + prettify(this.attack()) + " Attack for each time you've Shocked this Enemy (up to 10 times).";
             },
-            upgrade: "+5% Shock Chance, +5% Shock Damage, -5% Attack Time",
+            upgrade: "+5% Shock Chance, +5% Shock Damage, -5% Attack Time, +5% Shock Resist, +1 Attack per Shock",
             attackSpeed: function(){
                 return 0.9 * Math.pow(0.95, this.level);
             },
@@ -1109,10 +1195,18 @@ var autoBattle = {
             shockMod: function(){
                 return .65 + (.1 * this.level);
             },
+            shockResist: function(){
+                return 10 + (5 * this.level);
+            },
+            attack: function(){
+                return 2 + this.level;
+            },
             doStuff: function(){
                 autoBattle.trimp.shockMod += this.shockMod();
                 autoBattle.trimp.shockChance += this.shockChance();
                 autoBattle.trimp.attackSpeed *= this.attackSpeed();
+                autoBattle.trimp.attack += (Math.min(10, autoBattle.enemy.shock.count) * this.attack());
+                autoBattle.trimp.shockResist += this.shockResist();
             },
             priceMod: 5,
             startPrice: 1000000
@@ -1154,7 +1248,7 @@ var autoBattle = {
             level: 1,
             zone: 135,
             description: function(){
-                return "+" + prettify(this.defense()) + " Defense and +" + prettify(this.health()) + " Max Health if the enemy is Poisoned. On successfully adding a new Poison Stack to an Enemy, heal for half of this item's Max Health. If the Enemy is at Max Poison Stacks, non-Lifesteal healing effects on you are doubled. +" + prettify(this.poisonMod()) + " Poison Damage."
+                return "+" + prettify(this.defense()) + " Defense and +" + prettify(this.health()) + " Max Health if the enemy is Poisoned. On adding a new Poison Stack to an Enemy that hasn't had poisons expire, heal for half of this item's Max Health. If the Enemy is at Max Poison Stacks, non-Lifesteal healing effects on you are doubled. +" + prettify(this.poisonMod()) + " Poison Damage."
             },
             upgrade: "+5 Defense, +500 Health, +10 Poison Damage",
             defense: function(){
@@ -1168,6 +1262,7 @@ var autoBattle = {
             },
             onPoisonStack: function(stacks){
                 if (stacks == 1) autoBattle.trimp.maxHealth += this.health();
+                if (autoBattle.enemy.poison.expired) return;
                 autoBattle.trimp.health += (this.health() / 2);
                 if (autoBattle.trimp.health > autoBattle.trimp.maxHealth) autoBattle.trimp.health = autoBattle.trimp.maxHealth;
             },
@@ -1215,7 +1310,7 @@ var autoBattle = {
             level: 1,
             zone: 140,
             description: function(){
-                return "The Enemy is always Shocked, taking at least " + prettify(this.shockMod() * 100) + "% more damage. +" + prettify(this.health()) + " Health, +" + prettify(this.resist()) +  "% Poison Resist, +1 Maximum Poison Stack.";
+                return "The Enemy is always Shocked, taking at least " + prettify(this.shockMod() * 100) + "% more damage. +" + prettify(this.health()) + " Health, +" + prettify(this.resist()) +  "% Poison Resist, +3 Maximum Poison Stacks.";
             },
             upgrade: "+20% PermaShock Damage, +500 Health, 20% Poison Resist",
             shockMod: function(){
@@ -1235,9 +1330,105 @@ var autoBattle = {
                 }
                 autoBattle.trimp.maxHealth += this.health();
                 autoBattle.trimp.poisonResist += this.resist();
-                autoBattle.trimp.poisonStack++;
+                autoBattle.trimp.poisonStack += 3;
             },
             startPrice: 7e6,
+            priceMod: 10
+        },
+        Sundering_Scythe: {
+            owned: false,
+            equipped: false,
+            hidden: false,
+            level: 1,
+            zone: 143,
+            description: function(){
+                return "-" + prettify((1 - this.attackTime()) * 100) + "% Attack Time, +" + prettify(this.attack()) + " Attack, +" + prettify(this.health()) + " Health, +" + prettify(this.lifesteal() * 100) + "% Lifesteal. Your Shocks last a maximum of 10 seconds, and your Bleeds can be reapplied when below 5 seconds.";
+            },
+            upgrade: "-5% Attack Time, +5 Attack, +250 Health, +5% Lifesteal",
+            attackTime: function(){
+                return 0.842 * Math.pow(0.95, this.level);
+            },
+            attack: function(){
+                return 15 + (5 * this.level);
+            },
+            health: function(){
+                return 500 + (250 * this.level);
+            },
+            lifesteal: function(){
+                return 0.15 + (0.05 * this.level);
+            },
+            doStuff: function(){
+                autoBattle.trimp.attackSpeed *= this.attackTime();
+                autoBattle.trimp.attack += this.attack();
+                autoBattle.trimp.maxHealth += this.health();
+                autoBattle.trimp.lifesteal += this.lifesteal();
+            },
+            startPrice: 15e6,
+            priceMod: 10
+        },
+        //Shank 145
+        Plague_Bringer: {
+            owned: false,
+            equipped: false,
+            hidden: false,
+            level: 1,
+            zone: 148,
+            description: function(){
+                return "Your Poisons tick +" + prettify((1 - this.tickMult()) * 100) + "% faster. +" + prettify(this.eachPoison()) + " Poison Damage for every percentage point of Bleed or Shock resist on the Enemy. Heal for " + prettify(this.healAmt()) + " per stack of Poison when your Poisons deal damage." 
+            },
+            upgrade: "+2% Poison Tick Rate, +0.05 Poison Damage per Enemy Resist, +5 Heal on Poison Tick",
+            tickMult: function(){
+                return 0.816 * Math.pow(0.98, this.level);
+            },
+            eachPoison: function(){
+                return 0.05 + (0.05 * this.level);
+            },
+            healAmt: function(){
+                return 5 + (5 * this.level);
+            },
+            poisonMod: function(){
+                var res = autoBattle.enemy.bleedResist + autoBattle.enemy.shockResist;
+                return Math.floor(res * this.eachPoison());
+            },
+            doStuff: function(){
+                autoBattle.trimp.poisonMod += this.poisonMod();
+                autoBattle.trimp.poisonTick *= this.tickMult();
+                autoBattle.trimp.poisonHeal += this.healAmt();
+            },
+            startPrice: 70e6,
+            priceMod: 10
+        },
+        Very_Large_Slime: {
+            owned: false,
+            equipped: false,
+            hidden: false,
+            level: 1,
+            zone: 150,
+            description: function(){
+                return "Can create a Poison for 20 seconds. +" + prettify(this.poisonChance()) + "% Poison Chance, +" + prettify(this.poisonMod()) + " Poison Damage, +" + prettify(this.defense()) + " Defense, +" + prettify(this.health()) + " Health. Every fifth hit against an Enemy with Max Poison Stacks adds another Max Stack. " 
+            },
+            upgrade: "+15% Poison Chance, +20 Poison Damage, +50 Defense, +500 Health",
+            poisonChance: function(){
+                return 35 + (15 * this.level);
+            },
+            poisonMod: function(){
+                return 10 + (20 * this.level);
+            },
+            defense: function(){
+                return 50 + (50 * this.level);
+            },
+            health: function(){
+                return 500 + (500 * this.level);
+            },
+            doStuff: function(){
+                autoBattle.trimp.poisonChance += this.poisonChance();
+                autoBattle.trimp.poisonMod += this.poisonMod();
+                if (autoBattle.trimp.poisonTime < 20000) autoBattle.trimp.poisonTime = 20000;
+                autoBattle.trimp.defense += this.defense();
+                autoBattle.trimp.maxHealth += this.health();
+                autoBattle.trimp.poisonStack += Math.floor(autoBattle.enemy.poison.hitsAtMax / 5);
+            },
+            startPrice: 100e6,
             priceMod: 10
         },
         //Final calc items
@@ -1513,7 +1704,7 @@ var autoBattle = {
             }
         },
         Battlescruff: {
-            description: "Increases all Scruffy XP gained by +5% for each AutoBattle level cleared.",
+            description: "Increases all Scruffy XP gained by +2% for each AutoBattle level cleared.",
             owned: false,
             cost: 500000
         },
@@ -1592,6 +1783,8 @@ var autoBattle = {
         this.trimp.poisonTime = 0;
         this.trimp.poisonMod = 0;
         this.trimp.poisonStack = 2;
+        this.trimp.poisonTick = 1000;
+        this.trimp.poisonHeal = 0;
 
         this.trimp.shockResist = 0;
         this.trimp.poisonResist = 0;
@@ -1627,6 +1820,8 @@ var autoBattle = {
         this.checkPoison(this.enemy);
         if (this.enemy.bleed.time > 0) this.enemy.bleed.time -= this.frameTime;
         if (this.enemy.shock.time > 0 && this.enemy.shock.time != 9999999) this.enemy.shock.time -= this.frameTime;
+        if (this.trimp.health > this.trimp.maxHealth) this.trimp.health = this.trimp.maxHealth;
+        if (this.enemy.health > this.enemy.maxHealth) this.enemy.health = this.enemy.maxHealth;
         if (this.trimp.health <= 0){
             this.trimpDied();
             return;
@@ -1647,12 +1842,13 @@ var autoBattle = {
             if (!itemObj.equipped) continue;
             if (itemObj.doStuff)  itemObj.doStuff();
         }
+        if (this.items.Sundering_Scythe.equipped && this.trimp.shockTime > 10000) this.trimp.shockTime = 10000;
     },
     checkPoison: function(creature){
+        var opponent = creature.isTrimp ? this.enemy : this.trimp;
         if (creature.poison.time > 0){
             creature.poison.lastTick += this.frameTime;
-            var moldy = (!creature.isTrimp && this.items.Hungering_Mold.equipped);
-            var tickTime = (moldy) ? this.items.Hungering_Mold.tickTime() : 1000;
+            var tickTime = opponent.poisonTick;
             if (creature.poison.lastTick >= tickTime){
                 var shockMod = 1;
                 if (creature.shock.time > 0){
@@ -1662,8 +1858,8 @@ var autoBattle = {
                 creature.poison.time -= tickTime;
                 var dmg = (creature.poison.mod * shockMod)
                 creature.health -= dmg;
-                if (moldy) {
-                    var healFor = (this.items.Hungering_Mold.healAmt() * creature.poison.stacks);
+                if (opponent.poisonHeal) {
+                    var healFor = (opponent.poisonHeal * creature.poison.stacks);
                     if (this.items.The_Globulator.equipped) healFor *= 2;
                     this.trimp.health += healFor;
                     if (this.trimp.health > this.trimp.maxHealth) this.trimp.health = this.trimp.maxHealth;
@@ -1673,6 +1869,8 @@ var autoBattle = {
                     creature.poison.mod = 0;
                     creature.poison.lastTick = 0;
                     creature.poison.stacks = 0;
+                    creature.poison.expired = true;
+                    creature.poison.hitsAtMax = 0;
                 }
             }
         }
@@ -1720,7 +1918,7 @@ var autoBattle = {
             } 
         }
         var bleedChance = attacker.bleedChance - defender.bleedResist;
-        if (bleedChance > 0 && attacker.bleedMod > 0 && attacker.bleedTime > 0){
+        if (bleedChance > 0 && attacker.bleedMod > 0 && attacker.bleedTime > 0 && (defender.bleed.time <= 0 || this.items.Sundering_Scythe.equipped && defender.bleed.time <= 5000)){
             var roll = Math.floor(Math.random() * 100);
             if (roll < bleedChance){
                 if (this.items.Bloodstained_Gloves.equipped) this.items.Bloodstained_Gloves.onBleed();
@@ -1740,18 +1938,17 @@ var autoBattle = {
                     defender.poison.stacks++;
                     if (attacker.isTrimp && this.items.The_Globulator.equipped) this.items.The_Globulator.onPoisonStack(defender.poison.stacks);
                 }
+                else defender.poison.hitsAtMax++;
             }
         }
         var shockChance = attacker.shockChance - defender.shockResist;
-        if (shockChance > 0 && attacker.shockMod > 0 && attacker.shockTime > 0){
+        if (shockChance > 0 && attacker.shockMod > 0 && attacker.shockTime > 0 && (defender.shock.time <= 0 || (defender.shock.time == 9999999 && attacker.shockMod > defender.shock.mod))){
             var roll = Math.floor(Math.random() * 100);
             if (roll < shockChance){
-                if (defender.shock.mod < attacker.shockMod || defender.shock.time <= 0){
-                    if ((defender.shock.time <= 0 || defender.shock.time == 9999999) && attacker.isTrimp && this.items.Eelimp_in_a_Bottle.equipped) defender.lastAttack = 0;
-                    defender.shock.time = attacker.shockTime;
-                    defender.shock.mod = attacker.shockMod;
-                }
-                else if (defender.shock.time < attacker.shockTime && attacker.shockMod == defender.shock.mod) defender.shock.time = attacker.shockTime;
+                if (attacker.isTrimp && this.items.Eelimp_in_a_Bottle.equipped) defender.lastAttack = 0;
+                defender.shock.time = attacker.shockTime;
+                defender.shock.mod = attacker.shockMod;
+                defender.shock.count++;
             }
         }
     },
@@ -1786,6 +1983,7 @@ var autoBattle = {
         this.enemy.health = this.enemy.baseHealth;
         if (this.items.Sacrificial_Shank.equipped) this.items.Sacrificial_Shank.onEnemy();
         this.battleTime = 0;
+        this.fight();
         if (resetStats) this.resetStats();
     },
     setProfile: function(){
@@ -1836,25 +2034,26 @@ var autoBattle = {
                     var mod = Math.pow(0.98, this.enemyLevel);
                     this.profile += "-" + prettify((1 - mod) * 100) + "% Attack Time, ";
                     this.enemy.baseAttackSpeed *= mod;
+                    if (selectedEffectsCount[checkSelected] >= 2) effects.splice(effects.indexOf(effect), 1);
                     break;
                 case "poison":
                     this.profile += "Poisoning, ";
                     this.enemy.poisonChance += (this.enemyLevel * 3);
                     this.enemy.poisonMod += (Math.ceil(this.enemyLevel / 5));
                     this.enemy.poisonStack += Math.floor(this.enemyLevel / 10);
-                    this.enemy.poisonTime = Math.ceil(this.enemyLevel / 10) * 5000;
+                    this.enemy.poisonTime = 2500 + (Math.ceil(this.enemyLevel / 5) * 2500);
                     break;
                 case "bleed":
                     this.profile += "Bloodletting, ";
                     this.enemy.bleedChance += (this.enemyLevel * 3);
                     this.enemy.bleedMod += (this.enemyLevel / 13);
-                    this.enemy.bleedTime = Math.ceil(this.enemyLevel / 10) * 10000;
+                    this.enemy.bleedTime = 5000 + (Math.floor(this.enemyLevel / 20) * 5000);
                     break;
                 case "shock":
                     this.profile += "Shocking, ";
                     this.enemy.shockChance += (this.enemyLevel * 3);
-                    this.enemy.shockMod += (this.enemyLevel / 8);
-                    this.enemy.shockTime = Math.ceil(this.enemyLevel / 10) * 10000;
+                    this.enemy.shockMod += (this.enemyLevel / 10);
+                    this.enemy.shockTime = 5000 + (Math.floor(this.enemyLevel / 20) * 5000);
                     break;
                 case "pResist":
                     this.profile += "Poison Resistant, ";
@@ -1876,7 +2075,7 @@ var autoBattle = {
                     break;
                 case "defense":
                     this.profile += "Defensive, ";
-                    this.enemy.defense += (this.enemyLevel / 2);
+                    this.enemy.defense += Math.ceil((this.enemy.level * 0.75) * Math.pow(1.04, this.enemy.level));
                     break;
                 case "lifesteal":
                     this.profile += "Lifestealing, ";
@@ -1891,6 +2090,7 @@ var autoBattle = {
         this.lootAvg.counter += this.battleTime;
         this.resetCombat();
         if (this.sessionEnemiesKilled < this.sessionTrimpsKilled) swapClass('abTab', 'abTabLosing', document.getElementById('autoBattleTab'));
+        this.popup(true, true);
         //this.notes += "Trimp Died. "
     },
     getDustMult: function(){
@@ -1929,6 +2129,8 @@ var autoBattle = {
         }
         if (this.sessionEnemiesKilled > this.sessionTrimpsKilled) swapClass('abTab', 'abTabWinning', document.getElementById('autoBattleTab'));
         this.resetCombat();
+        this.checkLastActions();
+        this.popup(true, false, true);
     },
     nextLevelCount: function(){
         return 10 * this.enemyLevel;
@@ -2018,9 +2220,49 @@ var autoBattle = {
         if (!itemObj) return;
         var cost = this.upgradeCost(item);
         if (this.dust < cost) return;
+        this.saveLastAction("upgrade", item);
         this.dust -= cost;
         itemObj.level++;
-        this.popup(true);
+        this.popup(false, false, true);
+    },
+    checkLastActions: function(){
+        var somethinGood = false;
+        for (var x = 0; x < this.lastActions.length; x++){
+            if (this.lastActions[x][2] > this.dust) {
+                somethinGood = true;
+                break;
+            }
+        }
+        if (!somethinGood) this.lastActions = [];
+    },
+    saveLastAction: function(type, what){
+        var lastLastAction = (this.lastActions.length) ? this.lastActions[this.lastActions.length - 1] : [];
+        if (lastLastAction && lastLastAction[0] == 'upgrade' && type == 'upgrade' && lastLastAction[1] == what) lastLastAction[5]++;
+        else this.lastActions.push([type, what, this.dust, this.maxEnemyLevel, this.enemiesKilled, 1]);
+        if (this.lastActions.length > 3) this.lastActions.splice(0,1);
+    },
+    restoreLastAction: function(){
+        var action = this.lastActions.splice(this.lastActions.length - 1, 1)[0];
+        this.dust = action[2];
+        this.maxEnemyLevel = action[3];
+        this.enemiesKilled = action[4];
+        if (action[0] == "upgrade"){
+            this.items[action[1]].level -= action[5];
+        }
+        else if (action[0] == "contract"){
+            this.items[action[1]].equipped = false;
+            this.items[action[1]].owned = false;
+        }
+        if (this.enemyLevel > this.maxEnemyLevel) this.enemyLevel = this.maxEnemyLevel;
+        this.confirmUndo = false;
+        this.resetStats();
+        this.resetCombat();
+        this.popup(false, false, true);
+    },
+    confirmUndo: false,
+    confirmUndoClicked: function(){
+        this.confirmUndo = !this.confirmUndo;
+        this.popup(false, false, true);
     },
     levelDown: function(){
         if (this.enemyLevel > 1) {
@@ -2062,6 +2304,7 @@ var autoBattle = {
         this.hideMode = false;
         this.popupMode = to;
         this.notes = "";
+        this.confirmUndo = false;
         this.popup(false, false, true);
     },
     toggleHideMode: function(){
@@ -2078,9 +2321,10 @@ var autoBattle = {
         this.items[itemName].hidden = false;
         this.popup(false, false, true);
     },
-    acceptContract: function(item){
+    acceptContract: function(item){ 
         var price = this.contractPrice(item);
         if (this.dust < price) return;
+        this.saveLastAction("contract", item);
         this.dust -= price;
         this.items[item].owned = true;
         this.popup(false, false, true);
@@ -2104,18 +2348,24 @@ var autoBattle = {
 
     },
     hideMode: false,
-    popup: function(updateOnly, statsOnly, fromButton){
-        if (!updateOnly && !statsOnly && !fromButton) {
+    popup: function(updateOnly, statsOnly, itemsOnly){
+        if (!updateOnly && !statsOnly && !itemsOnly) {
             this.popupMode = "items";
             this.hideMode = false;
+            this.confirmUndo = false;
         }
-        if (updateOnly && (lastTooltipTitle != "AutoBattle" || !game.global.lockTooltip)) return;
+        if ((updateOnly || itemsOnly) && (lastTooltipTitle != "AutoBattle" || !game.global.lockTooltip)) return;
+        if (usingRealTimeOffline){
+            cancelTooltip();
+            return;
+        }
+        var text = "";
         var topText = prettify(this.dust) + " Dust (" + prettify(this.getDustPs()) + " per sec)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Enemies Killed: " + this.sessionEnemiesKilled + "&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Trimps Dead: " + this.sessionTrimpsKilled + "<br/>Enemy Level " + this.enemy.level + " (" + this.profile + ")&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;" + ((this.enemyLevel == this.maxEnemyLevel) ? "Kill " + (this.nextLevelCount() - this.enemiesKilled) : "Farming");
         var buttons = "";
 
         if (!(updateOnly && statsOnly)) buttons = "<div id='abLevelButtons'><span id='abDecreaseLevel' onclick='autoBattle.levelDown()' class='btn-md btn color'>- Decrease Enemy Level -</span><span onclick='autoBattle.toggleAutoLevel()' id='abAutoLevel' class='btn btn-md color'>Set AutoLevel On</span><span onclick='autoBattle.levelUp()' id='abIncreaseLevel' class='btn btn-md color'>+ Increase Enemy Level +</span><span id='abHelpBtn' onclick='autoBattle.help()' class='icomoon icon-question-circle'></span><span id='abCloseBtn' onclick='cancelTooltip()' class='icomoon icon-close'></span></div>";
-        var text = "<div class='noselect'><div id='autoDust'>" + topText + "</div>" + buttons + "<div class='autoBattleTopName'>Trimp</div><div class='autoBattleTopName'>Enemy</div>";
-        if (updateOnly) document.getElementById('autoDust').innerHTML = topText;
+        text = "<div class='noselect'><div id='autoDust'>" + topText + "</div>" + buttons + "<div class='autoBattleTopName'>Trimp</div><div class='autoBattleTopName'>Enemy</div>";
+        if (updateOnly || itemsOnly) document.getElementById('autoDust').innerHTML = topText;
         var trimpAttackTime = (this.trimp.attackSpeed);
         var enemyAttackTime = (this.enemy.attackSpeed);
 
@@ -2123,7 +2373,7 @@ var autoBattle = {
         var EhpPct = Math.min(100, ((this.enemy.health / this.enemy.maxHealth) * 100)).toFixed(2);
         var atkPct = Math.min(100, ((this.trimp.lastAttack / (trimpAttackTime / 1000)) / 10)).toFixed(2);
         var EatkPct = Math.min(100, ((this.enemy.lastAttack / (enemyAttackTime / 1000)) / 10)).toFixed(2);
-        if (updateOnly && statsOnly){
+        if ((updateOnly && statsOnly) || itemsOnly){
             document.getElementById('autoBattleTrimpHealthBar').style.width = hpPct + "%";
             document.getElementById('autoBattleTrimpAttackBar').style.width = atkPct + "%";
             document.getElementById('autoBattleTrimpHealth').innerHTML = prettify(this.trimp.health);
@@ -2158,7 +2408,7 @@ var autoBattle = {
             statsText += "</div>";
             statsText += "<br/><b>Poisoned:</b> ";
             if (fighterObj.poison.time > 0){
-                var timeText = (x == 1 && this.items.Hungering_Mold.equipped) ? " every " + prettify(this.items.Hungering_Mold.tickTime() / 1000) + " sec" : "every second";
+                var timeText = (opponentObj.poisonTick != 1000) ? " every " + prettify(opponentObj.poisonTick / 1000) + " sec" : "every second";
                 statsText += prettify(fighterObj.poison.mod) + " damage " + timeText + " for " + (fighterObj.poison.time / 1000).toFixed(1) + " sec. (" + fighterObj.poison.stacks + "/" + opponentObj.poisonStack + ")";
             }
             else statsText += "None";
@@ -2196,16 +2446,23 @@ var autoBattle = {
             if (elem){
                 if (notesElem) notesElem.innerHTML = this.notes;
                 elem.innerHTML = statsText;
-                return;
+                if (!itemsOnly) return;
             }
         }
         text += "<div id='autoBattleStatsText'>" + statsText + "</div>";
-        text += "<div id='autoBattleMenuButtons'><span onclick='autoBattle.swapPopup(\"items\")' class='btn btn-lg btn-primary'>Items</span><span onclick='autoBattle.swapPopup(\"bonuses\")' class='btn btn-lg colorNavy'>Bonuses</span><span onclick='autoBattle.swapPopup(\"contracts\")' class='btn btn-lg colorVoidy'>Contracts</span><span onclick='autoBattle.swapPopup(\"hidden\")' class='btn btn-lg btn-warning'>Hidden Items</span><span class='btn btn-lg btn-danger' onclick='autoBattle.toggleHideMode()'>Hide Items</span></div>";
+        text += "<div id='autoBattleMenuButtons'><span onclick='autoBattle.swapPopup(\"items\")' class='btn btn-lg btn-primary'>Items</span><span onclick='autoBattle.swapPopup(\"bonuses\")' class='btn btn-lg colorNavy'>Bonuses</span><span onclick='autoBattle.swapPopup(\"contracts\")' class='btn btn-lg colorVoidy'>Contracts</span><span onclick='autoBattle.swapPopup(\"hidden\")' class='btn btn-lg btn-warning'>Hidden Items</span><span class='btn btn-lg btn-danger' onclick='autoBattle.toggleHideMode()'>Hide Items</span><span onclick='autoBattle.swapPopup(\"other\")' style='border: 1px solid #757575; color: white; background-color: #979393;' class='btn btn-lg btn-default'>Misc</span></div>";
+        var notesElem = document.getElementById('autoBattleNotes');
+        if (this.popupMode == "items" || this.popupMode == "hidden") {
+            if (!notesElem || !itemsOnly) text +=  "<div id='autoBattleNotes'>" + this.notes + "</div>";
+            if (notesElem) notesElem.style.display = 'block';
+        }
+        else if (notesElem && itemsOnly) notesElem.style.display = 'none';
         
+        text += "<div id='autoItemsDiv' class='niceScroll'>"
+        var itemsElem = document.getElementById('autoItemsDiv');
+        if (itemsOnly && itemsElem) text = "";
         if (this.popupMode == "items" || this.popupMode == "hidden"){
-            text +=  "<div id='autoBattleNotes'>" + this.notes + "</div>";
             var itemList = this.getItemOrder();
-            text += "<div id='autoItemsDiv' class='niceScroll'>"
             var line1 = "";
             var line2 = "";
             var count = 1;
@@ -2244,7 +2501,6 @@ var autoBattle = {
             text += "<div>" + line1 + "</div><div>" + line2 + "</div></div>";
         }
         else if (this.popupMode == "bonuses"){
-            text += "<div id='autoItemsDiv' class='niceScroll'>";
             for (var bonus in this.bonuses){
                 var bonusObj = this.bonuses[bonus];
                 var cost = this.getBonusCost(bonus);
@@ -2272,7 +2528,6 @@ var autoBattle = {
             text += "</div>";
         }
         else if (this.popupMode == "contracts"){
-            text += "<div id='autoItemsDiv'>";
             var contracts = this.getContracts();
             for (var x = 0; x < contracts.length; x++){
                 var item = contracts[x];
@@ -2280,13 +2535,49 @@ var autoBattle = {
                 text += "<div class='contractBox'><div class='contractTitle'>" + item.split("_").join(' ') + "</div><div class='contractDescription'>" + itemObj.description() + "</div><span onclick='autoBattle.acceptContract(\"" + item + "\")' class='btn btn-lg colorVoidy'>Accept (" + prettify(this.contractPrice(item)) + " Dust, Complete a Z" + itemObj.zone + " Void Map)</span></div>";
             }
         }
-        text += "</div>";
+        else if (this.popupMode == "other"){
+            text += "<div class='abMiscBox'><b style='font-size: 1.1em;'>Undo last change</b><br/>";
+            var action = this.lastActions[this.lastActions.length - 1];
+            if (action){
+                var itemName = action[1].split("_").join(' ');
+                if (action[0] == "contract") text += "Return " + itemName + " to the Void";
+                else if (action[0] == "upgrade") text += "Downgrade " + itemName + " by " + action[5] + " level" + needAnS(action[5]);
+                text += ", and <b>SET YOUR DUST TO " + prettify(action[2]) + "</b> (The amount you had the moment before you spent it).";
+                if (this.maxEnemyLevel > action[3]) text += " Your progress will be set back to level " + action[3] + ".";
+                else if (this.enemiesKilled > action[4]) text += " Your kill counter will be reduced by " + prettify(this.enemiesKilled - action[4]) + ".";
+                text += "<br/>";
+                if (!this.confirmUndo) text += "<span class='btn autoItemUpgrade btn-lg' onclick='autoBattle.confirmUndoClicked()'>Undo</span>";
+                else text += "<b>Are you sure?!</b><br/><span class='btn autoItemUpgrade btn-lg' onclick='autoBattle.restoreLastAction()'>Yes, Undo</span><span class='btn autoItemHide btn-lg' onclick='autoBattle.confirmUndoClicked()'>No, Cancel</span>";
+            }
+            else text += "Undoing your last 3 actions would still leave you with less dust than you have now."
+            text += "</div>"
+            for (var x = 1; x <= 3; x++){
+                text += "<div class='abMiscBox preset'><b style='font-size: 1.1em;'>Preset " + x + "</b><br/><div class='presetItems'>";
+                var pname = 'p' + x;
+                var preset = this.presets[pname];
+                if (!preset.length) text += "Nothing Yet";
+                for (var y = 0; y < preset.length; y++){
+                    if (!this.items[preset[y]].owned) continue;
+                    if (y != 0) text += ", ";
+                    text += preset[y].split("_").join(' ');
+                }
+                text += "</div>";
+                text += "<span class='btn autoItemEquipped btn-lg' onclick='autoBattle.savePreset(\"p" + x + "\")'>Save</span>";
+                if (preset.length) text += "<span class='btn autoItemUpgrade btn-lg' onclick='autoBattle.loadPreset(\"p" + x + "\")'>Load</span>"
+                text += "</div>";
+            }
+            text += "</div>";
+        }
+        
+        if (itemsOnly && itemsElem){
+            itemsElem.innerHTML = text;
+        }
+        else text += "</div>";
         var scrollTop = 0;
-        var itemsElem = document.getElementById('autoItemsDiv');
         if (itemsElem){
             scrollTop = itemsElem.scrollTop;
         }
-        tooltip('confirm', null, 'update', text, '', 'AutoBattle', 'Close', false, true)
+        if (!(itemsOnly && itemsElem)) tooltip('confirm', null, 'update', text, '', 'AutoBattle', 'Close', false, true)
         if (!(updateOnly && statsOnly)) this.updatePopupBtns();
         if (scrollTop > 0){
             itemsElem = document.getElementById('autoItemsDiv');
