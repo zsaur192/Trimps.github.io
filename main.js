@@ -404,6 +404,8 @@ function load(saveString, autoLoad, fromPf) {
 	game.global.lockTooltip = false;
 	autoBattle.resetAll();
 	playerSpire.resetToDefault();
+	alchObj.load();
+	autoBattle.load();
 	if (savegame.playerSpire) playerSpire.load(savegame.playerSpire)
 	//Compatibility
 
@@ -968,13 +970,18 @@ function load(saveString, autoLoad, fromPf) {
 	if (betaV < 3){
 		game.global.alchemyUnlocked = false;
 	}
+	if (betaV < 4){
+		if (game.global.challengeActive == "Alchemy"){
+			var oldFinding = alchObj.potionsOwned[1];
+			var oldFindingAuto = alchObj.potionAuto[1];
+			alchObj.potionsOwned[1] = alchObj.potionsOwned[2];
+			alchObj.potionAuto[1] = alchObj.potionAuto[2];
+			alchObj.potionsOwned[2] = oldFinding;
+			alchObj.potionAuto[2] = oldFindingAuto;
+		}
+	}
 	//End test server only
 	//Temporary until next patch
-	if (compareVersion([5,4,2], oldStringVersion)){
-		game.options.menu.showHoliday.enabled = 1;
-		game.options.menu.showHoliday.locked = false;
-		addNewSetting("showHoliday");
-	}
 	//End Temporary
 	portalUniverse = game.global.universe;
 	Fluffy.handleBox();
@@ -1153,8 +1160,6 @@ function load(saveString, autoLoad, fromPf) {
 	countChallengeSquaredReward();
 	manageEqualityStacks();
 	setTrimpColSize();
-	alchObj.load();
-	autoBattle.load();
 	if (game.global.totalVoidMaps > 0 && !game.global.mapsActive) addVoidAlert();
 	if (!game.options.menu.pauseGame.enabled) {
 		//If not paused and offline progress is enabled, run offline progress
@@ -2606,7 +2611,7 @@ function trustworthyTrimps(noTip, forceTime){
 		if (getPerkLevel("Motivation_II") > 0) amt *= (1 + (getPerkLevel("Motivation_II") * game.portal.Motivation_II.modifier));
 		if (job != "Explorer"){
 			if (game.global.challengeActive == "Alchemy") amt *= alchObj.getPotionEffect("Potion of Finding");
-			else amt *= alchObj.getPotionEffect("Elixir of Finding");
+			amt *= alchObj.getPotionEffect("Elixir of Finding");
 		}
 		if (game.global.pandCompletions && job != "Explorer" && game.global.universe == 2) amt *= game.challenges.Pandemonium.getTrimpMult();
 		if (getPerkLevel("Observation") > 0 && game.portal.Observation.trinkets > 0) amt *= game.portal.Observation.getMult();
@@ -3333,6 +3338,7 @@ function canCommitCarpentry(noInfinity){ //Uh, and Coordinated. This checks coor
 	var newMax = game.resources.trimps.max * game.resources.trimps.maxMod;
 	newMax = Math.floor(newMax * (Math.pow(1 + game.portal.Carpentry.modifier, getPerkLevel("Carpentry") + game.portal.Carpentry.levelTemp)));
 	if (typeof game.portal.Carpentry_II.levelTemp !== 'undefined') newMax = Math.floor(newMax * (1 + (game.portal.Carpentry_II.modifier * (getPerkLevel("Carpentry_II") + game.portal.Carpentry_II.levelTemp))));
+	newMax = Math.floor(newMax * (alchObj.getPotionEffect("Elixir of Crafting")));
 	var error = document.getElementById("portalError");
 	error.innerHTML = "";
 	var good = true;
@@ -3606,7 +3612,7 @@ function rewardResource(what, baseAmt, level, checkMapLootScale, givePercentage)
 	if (what == "helium") amt *= alchObj.getRadonMult();
 	if (what != "fragments" && what != "helium"){
 		if (game.global.challengeActive == "Alchemy") amt *= alchObj.getPotionEffect("Potion of Finding");
-		else amt *= alchObj.getPotionEffect("Elixir of Finding");
+		amt *= alchObj.getPotionEffect("Elixir of Finding");
 	}
 	if (getPerkLevel("Greed")) amt *= game.portal.Greed.getMult();
 	if (game.global.challengeActive == "Quagmire") amt *= game.challenges.Quagmire.getLootMult();
@@ -3879,7 +3885,7 @@ function gather() {
 			if (getPerkLevel("Motivation_II") > 0) perSec *= (1 + (getPerkLevel("Motivation_II") * game.portal.Motivation_II.modifier));
 			if (increase != "fragments" && increase != "science"){
 				if (game.global.challengeActive == "Alchemy") perSec *= alchObj.getPotionEffect("Potion of Finding");
-				else perSec *= alchObj.getPotionEffect("Elixir of Finding");
+				perSec *= alchObj.getPotionEffect("Elixir of Finding");
 			}
 			if (game.global.pandCompletions && game.global.universe == 2 && increase != "fragments") perSec *= game.challenges.Pandemonium.getTrimpMult();
 			if (getPerkLevel("Observation") > 0 && game.portal.Observation.trinkets > 0) perSec *= game.portal.Observation.getMult();
@@ -4764,6 +4770,7 @@ function checkJobItem(what, take, costItem, amtOnly, toBuy) {
 }
 
 function canAffordCoordinationTrimps(){
+	if (game.global.challengeActive == "Trappapalooza") return ((game.resources.trimps.owned - game.resources.trimps.employed) >= Math.ceil(game.resources.trimps.getCurrentSend() * 0.25));
 	return (game.resources.trimps.realMax() >= (game.resources.trimps.getCurrentSend() * 3))
 }
 
@@ -9249,7 +9256,7 @@ function addSpecials(maps, countOnly, map, getPrestiges) { //countOnly must incl
 }
 
 
-function getFarmlandsResType(map){
+function getFarmlandsResType(){
 	var rota = ["Any", "Metal", "Wood", "Food", "Gems"];
 	var index = game.global.world % 5;
 	return rota[index];
@@ -9647,6 +9654,7 @@ function mapsSwitch(updateOnly, fromRecycle) {
 	document.getElementById('togglemapAtZone2').style.display = (game.global.canMapAtZone) ? "block" : "none";
     if (game.global.preMapsActive) {
 		//Switching to Map Chamber
+		refreshMaps();
 		if (currentMapObj && (currentMapObj.location == "Void" || currentMapObj.location == "Darkness")) {
 			recycleMap(-1, true, true);
 			currentMapObj = false;
@@ -9849,6 +9857,7 @@ function runMap() {
 		}
 	}
 	if (game.global.challengeActive == "Insanity") game.challenges.Insanity.drawStacks();
+	if (game.global.challengeActive == "Pandemonium") game.challenges.Pandemonium.drawStacks();
 }
 
 function getHousingMultiplier(){
@@ -14982,7 +14991,7 @@ function simpleSeconds(what, seconds) {
 		if (getPerkLevel("Motivation_II") > 0) amt *= (1 + (getPerkLevel("Motivation_II") * game.portal.Motivation_II.modifier));
 		if (what != "science" && what != "fragments"){
 			if (game.global.challengeActive == "Alchemy") amt *= alchObj.getPotionEffect("Potion of Finding");
-			else amt *= alchObj.getPotionEffect("Elixir of Finding");
+			amt *= alchObj.getPotionEffect("Elixir of Finding");
 		}
 		if (game.global.pandCompletions && game.global.universe == 2 && what != "fragments") amt *= game.challenges.Pandemonium.getTrimpMult();
 		if (getPerkLevel("Observation") > 0 && game.portal.Observation.trinkets > 0) amt *= game.portal.Observation.getMult();
@@ -15065,7 +15074,7 @@ function scaleLootBonuses(amt, ignoreScry){
 	if (getPerkLevel("Looting")) amt += (amt * getPerkLevel("Looting") * game.portal.Looting.modifier);
 	if (getPerkLevel("Looting_II")) amt *= (1 + (getPerkLevel("Looting_II") * game.portal.Looting_II.modifier));
 	if (game.global.challengeActive == "Alchemy") amt *= alchObj.getPotionEffect("Potion of Finding");
-	else amt *= alchObj.getPotionEffect("Elixir of Finding");
+	amt *= alchObj.getPotionEffect("Elixir of Finding");
 	if (getPerkLevel("Greed")) amt *= game.portal.Greed.getMult();
 	if (Fluffy.isRewardActive("wealthy")) amt *= 2;
 	if (getUberEmpowerment() == "Wind") amt *= 10;
@@ -15092,7 +15101,7 @@ function addBoost(level, previewOnly) {
 		if (getPerkLevel("Motivation_II") > 0) amt *= (1 + (getPerkLevel("Motivation_II") * game.portal.Motivation_II.modifier));
 		if (job != "Explorer"){
 			if (game.global.challengeActive == "Alchemy") amt *= alchObj.getPotionEffect("Potion of Finding");
-			else amt *= alchObj.getPotionEffect("Elixir of Finding");
+			amt *= alchObj.getPotionEffect("Elixir of Finding");
 		}
 		if (game.global.pandCompletions && job != "Explorer" && game.global.universe == 2) amt *= game.challenges.Pandemonium.getTrimpMult();
 		if (getPerkLevel("Observation") > 0 && game.portal.Observation.trinkets > 0) amt *= game.portal.Observation.getMult();
@@ -16591,7 +16600,7 @@ var Fluffy = {
 			reward *= (1 + (knowBonus / 100));
 		}
 		if (autoBattle.oneTimers.Battlescruff.owned && game.global.universe == 2){
-			reward *= (1 + ((autoBattle.maxEnemyLevel - 1) / 100));
+			reward *= (1 + ((autoBattle.maxEnemyLevel - 1) / 50));
 		}
 		if (count) reward *= count;
 		if (getHeirloomBonus("Staff", "FluffyExp") > 0){
@@ -16751,7 +16760,7 @@ var Fluffy = {
 				elem.innerHTML = 'From Nurture. Increases Exp gain by 10% (compounding) per constructed Laboratory. Currently granting ' + prettify(game.buildings.Laboratory.getExpMult()) + 'x.';
 				return;
 			case "battlescruff":
-				elem.innerHTML = 'From the Battlescruff AutoBattle reward. Increases Scruffy XP gained by 1% per level cleared, currently granting ' + prettify(1 + ((autoBattle.maxEnemyLevel - 1) / 100)) + 'x.';
+				elem.innerHTML = 'From the Battlescruff AutoBattle reward. Increases Scruffy XP gained by 2% per level cleared, currently granting ' + prettify(1 + ((autoBattle.maxEnemyLevel - 1) / 50)) + 'x.';
 		}
 	},
 	cruffysToggled: false,
