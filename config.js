@@ -26,7 +26,7 @@ var toReturn = {
 		//Leave 'version' at 4.914 forever, for compatability with old saves
 		version: 4.914,
 		isBeta: true,
-		betaV: 3,
+		betaV: 4,
 		killSavesBelow: 0.13,
 		uniqueId: new Date().getTime() + "" + Math.floor(Math.random() * 1e10),
 		playerGathering: "",
@@ -519,33 +519,23 @@ var toReturn = {
 	herbs: {
 		Potatoes: {
 			owned: 0,
-			found: 0,
 			cowned: 0,
-			cfound: 0
 		},
 		Mushrooms: {
 			owned: 0,
-			found: 0,
 			cowned: 0,
-			cfound: 0
 		},
 		Seaweed: {
 			owned: 0,
-			found: 0,
 			cowned: 0,
-			cfound: 0
 		},
 		Firebloom: {
 			owned: 0,
-			found: 0,
 			cowned: 0,
-			cfound: 0
 		},
 		Berries: {
 			owned: 0,
-			found: 0,
 			cowned: 0,
-			cfound: 0
 		},
 	},
 	empowerments: {
@@ -2797,14 +2787,14 @@ var toReturn = {
 				if (trinkets > cap) trinkets = cap;
 				return 1 + ((trinkets * this.radLevel) / 100);
 			},
-			getDropChance: function(forceWorld){
+			getDropChance: function(forceWorld, ignoreAlch){
 				var useWorld = (forceWorld) ? forceWorld : game.global.world;
 				if (useWorld < 101) return 0;
 				if (useWorld > 201) useWorld = 200;
 				var base = this.radLevel;
 				var zones = useWorld - 100;
 				var chance = ((1 + ((base - 1) / 2)) * Math.pow(1.03, zones));
-				if (game.global.challengeActive == "Alchemy") chance = alchObj.getRunetrinketMult(chance);
+				if (game.global.challengeActive == "Alchemy" && !ignoreAlch) chance = alchObj.getRunetrinketMult(chance);
 				return chance;
 			},
 			giveTrinket: function(amt){
@@ -4701,7 +4691,7 @@ var toReturn = {
 			blockU1: true,
 			allowU2: true,
 			allowSquared: true,
-			squaredDescription: "Same as Berserk but you earn no perk. If you have the perk, that perk won't work.",
+			squaredDescription: "Travel to a dimension filled with lots of mild annoyances, sure to drive your Trimps berserk. All enemies in this dimension have 50% more attack and health. Every time your Trimps attack they have a 5% chance to become Frenzied, causing all kills to heal for 1% of max health, and also stack +50% attack and -2% max health, up to 25 times. If a frenzied group dies or is abandoned, your Trimps gain a permanent Weakened stack, reducing health by 4.99% per stack when outside of frenzy. If weakened stacks reach 20, Trimps can no longer become frenzied. Due to this dimension's annoying nature, the Angelic Mastery and Frenzy Perk do not work.",
 			completeAfterZone: 115,
 			unlockString: " reach Zone 115",
 			fireAbandon: true,
@@ -4978,44 +4968,6 @@ var toReturn = {
 				Fluffy.updateExp();
 			}
 		},
-		Alchemy: {
-			get description(){
-				return "Travel to a dimension where maps are filled with useful herbs. Collect different herbs from different types of maps, and use Alchemy to create powerful potions to strengthen your Trimps. Clearing <b>Z155</b> with this Challenge active will grant an additional 400% of all Radon earned up until that point, and will return the world to normal. You can repeat this challenge!" + ((!game.global.farmlandsUnlocked) ? " <b>Complete this Challenge once to unlock the ability to create a brand new type of map that should greatly aid your Alchemy.</b>" : "") + ((!game.global.alchemyUnlocked) ? " <b>Complete a Z155 Void Map with 15 or more Gaseous Potions and no Potions of the Void while on this Challenge to unlock the permanent skill of Alchemy.</b>" : "");
-			},
-			completed: false,
-			blockU1: true,
-			allowU2: true,
-			heliumThrough: 155,
-			heldHelium: 0,
-			completeAfterZone: 155,
-			unlockString: " reach Zone 155.",
-			fireAbandon: true,
-			filter: function(){
-				return (getHighestLevelCleared(true) >= 154);
-			},
-			abandon: function(){
-				if (!game.global.alchemyUnlocked) alchObj.tab.style.display = 'none';
-				cancelTooltip();
-			},
-			onLoad: function(){
-
-			},
-			onComplete: function(){
-				var reward = game.challenges.Alchemy.heldHelium;
-				reward *= 4;
-				message("You have completed the Alchemy challenge! You have gained an extra " + prettify(reward) + " Radon, and your world has been returned to normal.", "Notices");
-				if (!game.global.farmlandsUnlocked){
-					game.global.farmlandsUnlocked = true;
-					message("You have unlocked the ability to create Farmlands Maps! Farmlands Maps rotate between the other map types based on the zone at which they're run. See the Map Creation biome selection tooltip for more info!", "Notices");
-				}
-				addHelium(reward);
-				game.challenges.Alchemy.abandon();
-				game.global.challengeActive = "";
-			},
-			start: function(){
-				alchObj.tab.style.display = 'table-cell';
-			}
-		},
 		Pandemonium: {
 			get description(){
 				var text = "";
@@ -5031,6 +4983,7 @@ var toReturn = {
 			pandemonium: 0,
 			order: 100,
 			blockedEquips: [],
+			fireAbandon: true,
 			isEquipBlocked: function(which){
 				var equips = ["Shield", "Dagger", "Boots", "Mace", "Helmet", "Polearm", "Pants", "Battleaxe", "Shoulderguards", "Greatsword", "Breastplate"];
 				var index = equips.indexOf(which);
@@ -5038,6 +4991,17 @@ var toReturn = {
 				var blocked = this.disabledEquipCount();
 				if (index >= blocked) return false;
 				return true;
+			},
+			unlockEquips: function(){
+				var equips = ["Shield", "Dagger", "Boots", "Mace", "Helmet", "Polearm", "Pants", "Battleaxe", "Shoulderguards", "Greatsword", "Breastplate"];
+				var blocked = this.disabledEquipCount();
+				for (var x = 0; x < blocked; x++){
+					var equipName = equips[x];
+					var worldUnlock = game.worldUnlocks[equipName];
+					console.log(worldUnlock);
+					if (worldUnlock.world > game.global.world) continue;
+					unlockEquipment(equipName);
+				}
 			},
 			filter: function(){
 				return (getHighestLevelCleared(true) >= 149);
@@ -5111,6 +5075,7 @@ var toReturn = {
 			abandon: function(){
 				manageStacks(null, null, true, 'pandOrderStacks', null, null, true);
 				manageStacks(null, null, false, 'pandPandStacks', null, null, true);
+				this.unlockEquips();
 			},
 			drawStacks: function(){
 				manageStacks('Order', this.order, true, 'pandOrderStacks', 'icomoon icon-yingyang', this.orderTooltip(), false);
@@ -5141,6 +5106,7 @@ var toReturn = {
 				return "10% of these stacks will convert into Pandemonium stacks when this Zone is completed. Increases the orderliness of your Trimps by " + prettify(Math.pow(1.1111111, this.order)) + "%.";
 			},
 			onComplete: function(){
+				game.challenges.Pandemonium.abandon();
 				var oldAmt = this.getTrimpMult();
 				if (game.global.pandCompletions < this.maxRuns) {
 					game.global.pandCompletions++;
@@ -5149,7 +5115,7 @@ var toReturn = {
 				}
 				else message("You completed Pandemonium again, just for fun!", "Notices");
 				game.global.challengeActive = "";
-				game.challenges.Pandemonium.abandon();
+				
 			},
 			completed: false,
 			maxRuns: 25,
@@ -5158,7 +5124,45 @@ var toReturn = {
 			allowSquared: false,
 			completeAfterZone: 150,
 			unlockString: " reach Zone 150",
-		}
+		},
+		Alchemy: {
+			get description(){
+				return "Travel to a dimension where maps are filled with useful herbs. Collect different herbs from different types of maps, and use Alchemy to create powerful potions to strengthen your Trimps. Clearing <b>Z155</b> with this Challenge active will grant an additional 400% of all Radon earned up until that point, and will return the world to normal. You can repeat this challenge!" + ((!game.global.farmlandsUnlocked) ? " <b>Complete this Challenge once to unlock the ability to create a brand new type of map that should greatly aid your Alchemy.</b>" : "") + ((!game.global.alchemyUnlocked) ? " <b>Complete a Z155 Void Map with 15 or more Gaseous Brews and no Potions of the Void while on this Challenge to unlock the permanent skill of Alchemy.</b>" : "");
+			},
+			completed: false,
+			blockU1: true,
+			allowU2: true,
+			heliumThrough: 155,
+			heldHelium: 0,
+			completeAfterZone: 155,
+			unlockString: " reach Zone 155.",
+			fireAbandon: true,
+			filter: function(){
+				return (getHighestLevelCleared(true) >= 154);
+			},
+			abandon: function(){
+				if (!game.global.alchemyUnlocked) alchObj.tab.style.display = 'none';
+				cancelTooltip();
+			},
+			onLoad: function(){
+
+			},
+			onComplete: function(){
+				var reward = game.challenges.Alchemy.heldHelium;
+				reward *= 4;
+				message("You have completed the Alchemy challenge! You have gained an extra " + prettify(reward) + " Radon, and your world has been returned to normal.", "Notices");
+				if (!game.global.farmlandsUnlocked){
+					game.global.farmlandsUnlocked = true;
+					message("You have unlocked the ability to create Farmlands Maps! Farmlands Maps rotate between the other map types based on the zone at which they're run. See the Map Creation biome selection tooltip for more info!", "Notices");
+				}
+				addHelium(reward);
+				game.challenges.Alchemy.abandon();
+				game.global.challengeActive = "";
+			},
+			start: function(){
+				alchObj.tab.style.display = 'table-cell';
+			}
+		},
 	},
 	stats:{
 		trimpsKilled: {
@@ -7428,9 +7432,9 @@ var toReturn = {
 			health: 5,
 			fast: true,
 			loot: function (level, fromFluffy, fluffyCount) {
-				if (game.global.challengeActive == "Alchemy" && !game.global.alchemyUnlocked && game.global.world == 155 && alchObj.getPotionCount("Potion of the Void") == 0 && alchObj.getPotionCount("Gaseous Potion") >= 15){
+				if (game.global.challengeActive == "Alchemy" && !game.global.alchemyUnlocked && game.global.world == 155 && alchObj.getPotionCount("Potion of the Void") == 0 && alchObj.getPotionCount("Gaseous Brew") >= 15){
 					game.global.alchemyUnlocked = true;
-					message("You have successfully cleared a Z155 Void Map on Alchemy with " + alchObj.getPotionCount("Gaseous Potion") + " Gaseous Potions and no Potions of the Void! The Void recognizes your superiority, and has granted you the ability to use Alchemy in any dimension of this Universe.", "Notices");
+					message("You have successfully cleared a Z155 Void Map on Alchemy with " + alchObj.getPotionCount("Gaseous Brew") + " Gaseous Brews and no Potions of the Void! The Void recognizes your superiority, and has granted you the ability to use Alchemy in any dimension of this Universe.", "Notices");
 				}
 				if (game.resources.helium.owned == 0) fadeIn("helium", 10);
 				var amt = (game.global.world >= 60 && game.global.universe == 1) ? 10 : 2;
