@@ -1348,9 +1348,14 @@ function tooltip(what, isItIn, event, textString, attachFunction, numCheck, rena
 			tooltipText = tooltipText.replace('<coord>', coordReplace);
 			if (!canAffordCoordinationTrimps()){
 				var currentSend = game.resources.trimps.getCurrentSend();
-				var amtToGo = Math.floor((currentSend * 3) - game.resources.trimps.realMax());
+				if (game.global.challengeActive == "Trappapalooza") currentSend *= 0.25;
+				else currentSend *= 3;
+				var trimpCount = (game.global.challengeActive == "Trappapalooza") ? (game.resources.trimps.owned - game.resources.trimps.employed) : game.resources.trimps.realMax();
+				var amtToGo = Math.floor((currentSend) - trimpCount);
 				var s = (amtToGo == 1) ? "" : "s";
-				tooltipText += " <b>You need enough room for " + prettify(currentSend * 3) + " max Trimps. You are short " + prettify(Math.floor(amtToGo)) + " Trimp" + s + ".</b>";
+				if (game.global.challengeActive == "Trappapalooza") tooltipText += " <b>You need " + prettify(currentSend) + " unemployeed Trimps available.";
+				else tooltipText += " <b>You need enough room for " + prettify(currentSend) + " max Trimps.";
+				tooltipText += " You are short " + prettify(Math.floor(amtToGo)) + " Trimp" + s + ".</b>";
 			}
 		}
 		if (typeof game.upgrades[what].name !== 'undefined') what = game.upgrades[what].name;
@@ -1421,7 +1426,7 @@ function tooltip(what, isItIn, event, textString, attachFunction, numCheck, rena
 				if (getPerkLevel("Motivation") > 0) newValue *= (1 + (getPerkLevel("Motivation") * 0.05));
 				if (getPerkLevel("Motivation_II") > 0) newValue *= (1 + (getPerkLevel("Motivation_II") * game.portal.Motivation_II.modifier));
 				if (game.global.challengeActive == "Alchemy") newValue *= alchObj.getPotionEffect("Potion of Finding");
-				else newValue *= alchObj.getPotionEffect("Elixir of Finding");
+				newValue *= alchObj.getPotionEffect("Elixir of Finding");
 				if (game.global.pandCompletions && game.global.universe == 2) newValue *= game.challenges.Pandemonium.getTrimpMult();
 				if (getPerkLevel("Observation") > 0 && game.portal.Observation.trinkets > 0) newValue *= game.portal.Observation.getMult();
 				if (Fluffy.isRewardActive('gatherer')) newValue *= 2;
@@ -1882,12 +1887,15 @@ function getPsString(what, rawNum) {
 		}
 	}
 	var potionFinding;
-	if (game.global.challengeActive == "Alchemy") potionFinding *= alchObj.getPotionEffect("Potion of Finding");
-	else potionFinding *= alchObj.getPotionEffect("Elixir of Finding");
+	if (game.global.challengeActive == "Alchemy") potionFinding = alchObj.getPotionEffect("Potion of Finding");
 	if (potionFinding > 1 && what != "fragments" && what != "science"){
 		currentCalc  *= potionFinding;
-		var potName = (game.global.challengeActive == "Alchemy") ? "Potion of Finding" : "Elixir of Finding";
-		textString += "<tr><td class='bdTitle'>" + potName + "</td><td class='bdPercent'>+ " + prettify((potionFinding - 1) * 100) + "%</td><td class='bdNumber'>" + prettify(currentCalc) + "</td></tr>";
+		textString += "<tr><td class='bdTitle'>Potion of Finding</td><td class='bdPercent'>+ " + prettify((potionFinding - 1) * 100) + "%</td><td class='bdNumber'>" + prettify(currentCalc) + "</td></tr>";
+	}
+	potionFinding = alchObj.getPotionEffect("Elixir of Finding");
+	if (potionFinding > 1 && what != "fragments" && what != "science"){
+		currentCalc  *= potionFinding;
+		textString += "<tr><td class='bdTitle'>Elixir of Finding</td><td class='bdPercent'>+ " + prettify((potionFinding - 1) * 100) + "%</td><td class='bdNumber'>" + prettify(currentCalc) + "</td></tr>";
 	}
 	//Add Magmamancer
 	if (game.jobs.Magmamancer.owned > 0 && what == "metal"){
@@ -3163,18 +3171,20 @@ function getLootBd(what) {
 		currentCalc *= amt;
 		textString += "<tr><td class='bdTitle'>Greed (perk)</td><td>x" + " " + prettify(game.portal.Greed.getBonusAmt()) + "</td><td>" + getPerkLevel("Greed") + "</td><td>+ " + prettify((amt - 1) * 100) + "%</td><td>" + prettify(currentCalc) + "</td></tr>";
 	}
-	var potionFinding = (game.global.challengeActive == "Alchemy") ? alchObj.getPotionEffect("Potion of Finding") : alchObj.getPotionEffect("Elixir of Finding");
+	var potionFinding = (game.global.challengeActive == "Alchemy") ? alchObj.getPotionEffect("Potion of Finding") : "";
 	if (what != "Helium" && what != "Fragments" && potionFinding > 1){
 		currentCalc *= potionFinding;
-		var potName = (game.global.challengeActive == "Alchemy") ? "Potion of Finding" : "Elixir of Finding";
-		var mult = (game.global.challengeActive == "Alchemy") ? "+ 25%" : "x 1.05";
-		var count = alchObj.getPotionCount(potName);
-		textString += "<tr><td class='bdTitle'>" + potName + "</td><td>" + mult + "</td><td>" + count + "</td><td>+ " + prettify((potionFinding - 1) * 100) + "%</td><td>" + prettify(currentCalc) + "</td></tr>";
+		textString += "<tr><td class='bdTitle'>Potion of Finding</td><td>+ 25%</td><td>" + alchObj.getPotionCount("Potion of Finding") + "</td><td>+ " + prettify((potionFinding - 1) * 100) + "%</td><td>" + prettify(currentCalc) + "</td></tr>";
+	}
+	potionFinding = alchObj.getPotionEffect("Elixir of Finding");
+	if (what != "Helium" && what != "Fragments" && potionFinding > 1){
+		currentCalc *= potionFinding;
+		textString += "<tr><td class='bdTitle'>Elixir of Finding</td><td>x 1.05</td><td>" + alchObj.getPotionCount("Elixir of Finding") + "</td><td>+ " + prettify((potionFinding - 1) * 100) + "%</td><td>" + prettify(currentCalc) + "</td></tr>";
 	}
 	var gaseousPotion = alchObj.getRadonMult();
 	if (what == "Helium" && gaseousPotion > 1){
 		currentCalc *= gaseousPotion;
-		textString += "<tr><td class='bdTitle'>Gaseous Potion</td><td>+ 25%</td><td>" + alchObj.getPotionCount("Gaseous Potion") + "</td><td>+ " + prettify((gaseousPotion - 1) * 100) + "%</td><td>" + prettify(currentCalc) + "</td></tr>";
+		textString += "<tr><td class='bdTitle'>Gaseous Brew</td><td>+ 25%</td><td>" + alchObj.getPotionCount("Gaseous Brew") + "</td><td>+ " + prettify((gaseousPotion - 1) * 100) + "%</td><td>" + prettify(currentCalc) + "</td></tr>";
 	}
 	if (game.global.challengeActive == "Quagmire"){
 		amt = game.challenges.Quagmire.getLootMult();
@@ -4784,7 +4794,7 @@ function updatePs(jobObj, trimps, jobName){ //trimps is true/false, send PS as f
 			if (getPerkLevel("Motivation_II")) psText *= (1 + (getPerkLevel("Motivation_II") * game.portal.Motivation_II.modifier));
 			if (increase != "fragments" && increase != "science"){
 				if (game.global.challengeActive == "Alchemy") psText *= alchObj.getPotionEffect("Potion of Finding");
-				else psText *= alchObj.getPotionEffect("Elixir of Finding");
+				psText *= alchObj.getPotionEffect("Elixir of Finding");
 			}
 			if (game.global.pandCompletions && game.global.universe == 2 && increase != "fragments") psText *= game.challenges.Pandemonium.getTrimpMult();
 			if (getPerkLevel("Observation") > 0 && game.portal.Observation.trinkets > 0) psText *= game.portal.Observation.getMult();
@@ -4980,6 +4990,7 @@ function getMapIcon(mapObject, nameOnly) {
 	if (nameOnly) return icon;
 	if (mapObject.voidBuff)
 		return voidBuffConfig[mapObject.voidBuff].icon;
+	if (icon == "Scaling") icon = getFarmlandsResType();
 	switch (icon){
 		case "Food":
 			return "glyphicon glyphicon-apple";
